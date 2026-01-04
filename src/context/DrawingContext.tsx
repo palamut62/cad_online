@@ -1711,107 +1711,131 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         clearSelection();
       }
     } else if (activeCommand === 'HATCH') {
-      let minD = 20.0; // Selection threshold (artırıldı)
-      let targetEnt: Entity | null = null;
+      // HATCH: Create hatch with optional islands
+      // Step 1: Select outer boundary
+      // Step 2+: Select inner boundaries (islands) - press Enter to finish
 
-      entities.forEach(ent => {
-        if (!ent.visible) return;
-        // Hatchable entities: LWPOLYLINE (closed or open - will be auto-closed), CIRCLE, ELLIPSE
-        if (ent.type === 'LWPOLYLINE') {
-          // Allow ALL Polylines. We will force them closed in boundary creation.
+      const convertToBoundary = (ent: Entity): any => {
+        if (ent.type === 'CIRCLE') {
+          const pts: Point[] = [];
+          const segs = 64;
+          for (let i = 0; i < segs; i++) {
+            const t = (i / segs) * Math.PI * 2;
+            pts.push([
+              (ent as any).center[0] + Math.cos(t) * (ent as any).radius,
+              (ent as any).center[1] + Math.sin(t) * (ent as any).radius,
+              0
+            ]);
+          }
+          return {
+            type: 'LWPOLYLINE',
+            vertices: pts,
+            closed: true,
+            color: ent.color,
+            layer: ent.layer,
+            id: ent.id
+          };
+        } else if (ent.type === 'ELLIPSE') {
+          const pts: Point[] = [];
+          const segs = 64;
+          for (let i = 0; i < segs; i++) {
+            const t = (i / segs) * Math.PI * 2;
+            pts.push([
+              (ent as any).center[0] + Math.cos(t) * (ent as any).rx,
+              (ent as any).center[1] + Math.sin(t) * (ent as any).ry,
+              0
+            ]);
+          }
+          return {
+            type: 'LWPOLYLINE',
+            vertices: pts,
+            closed: true,
+            color: ent.color,
+            layer: ent.layer,
+            id: ent.id
+          };
         } else if (ent.type === 'SPLINE') {
-          // Allow Splines (assuming they form a loop or user wants to hatch them anyway)
-        } else if (ent.type !== 'CIRCLE' && ent.type !== 'ELLIPSE') {
-          return;
-        }
-
-        const d = closestPointOnEntity(point[0], point[1], ent);
-        if (d < minD) {
-          minD = d;
-          targetEnt = ent;
-        }
-      });
-
-      if (targetEnt) {
-        let boundary: any = targetEnt;
-        const tEnt = targetEnt as Entity;
-
-        if (tEnt.type === 'CIRCLE') {
-          // Approximate circle as polyline
-          const pts: Point[] = [];
-          const segs = 64;
-          for (let i = 0; i < segs; i++) {
-            const t = (i / segs) * Math.PI * 2;
-            pts.push([
-              tEnt.center[0] + Math.cos(t) * tEnt.radius,
-              tEnt.center[1] + Math.sin(t) * tEnt.radius,
-              0
-            ]);
-          }
-          boundary = {
+          return {
             type: 'LWPOLYLINE',
-            vertices: pts,
+            vertices: (ent as any).controlPoints,
             closed: true,
-            color: tEnt.color,
-            layer: tEnt.layer,
-            id: tEnt.id
+            color: ent.color,
+            layer: ent.layer,
+            id: ent.id
           };
-        } else if (tEnt.type === 'ELLIPSE') {
-          // Approximate ellipse as polyline
-          const pts: Point[] = [];
-          const segs = 64;
-          for (let i = 0; i < segs; i++) {
-            const t = (i / segs) * Math.PI * 2;
-            pts.push([
-              tEnt.center[0] + Math.cos(t) * tEnt.rx,
-              tEnt.center[1] + Math.sin(t) * tEnt.ry,
-              0
-            ]);
-          }
-          boundary = {
-            type: 'LWPOLYLINE',
-            vertices: pts,
-            closed: true,
-            color: tEnt.color,
-            layer: tEnt.layer,
-            id: tEnt.id
-          };
-        } else if (tEnt.type === 'SPLINE') {
-          // Approximate spline as polyline (using control points as vertices for now)
-          // Ideally needs curve interpolation, but this is a start
-          boundary = {
-            type: 'LWPOLYLINE',
-            vertices: tEnt.controlPoints,
-            closed: true, // Force closed
-            color: tEnt.color,
-            layer: tEnt.layer,
-            id: tEnt.id
-          };
-        } else if (tEnt.type === 'LWPOLYLINE') {
-          // Ensure the boundary is treated as closed for hatching
-          boundary = {
-            ...tEnt,
+        } else if (ent.type === 'LWPOLYLINE') {
+          return {
+            ...ent,
             closed: true
           };
         }
+        return null;
+      };
 
-        // Get hatch params from commandState or defaults
-        const hatchParams = commandState.hatchParams || { scale: 1, rotation: 0, pattern: { name: 'ANSI31', type: 'predefined', angle: 45 } };
+      if (step === 1) {
+        // Select outer boundary
+        let minD = 20.0;
+        let targetEnt: Entity | null = null;
 
-        addEntity({
-          type: 'HATCH',
-          boundary: boundary,
-          pattern: hatchParams.pattern || { name: 'ANSI31', type: 'predefined', angle: 45 },
-          scale: hatchParams.scale || 1.0,
-          rotation: hatchParams.rotation || 0,
-          color: hatchParams.color || tEnt.color,
-          layer: tEnt.layer
+        entities.forEach(ent => {
+          if (!ent.visible) return;
+          if (ent.type !== 'LWPOLYLINE' && ent.type !== 'CIRCLE' &&
+              ent.type !== 'ELLIPSE' && ent.type !== 'SPLINE') {
+            return;
+          }
+
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < minD) {
+            minD = d;
+            targetEnt = ent;
+          }
         });
-        console.log("Hatch created");
-        // Komut kalıcı - ESC'ye basılana kadar tekrar kullanılabilir
-        // cancelCommand() kaldırıldı
-      } else {
-        console.log("No closed boundary found.");
+
+        if (targetEnt) {
+          const boundary = convertToBoundary(targetEnt);
+          if (boundary) {
+            setCommandState({
+              outerBoundary: boundary,
+              islands: [],
+              hatchParams: { scale: 1, rotation: 0, pattern: { name: 'ANSI31', type: 'predefined', angle: 45 } }
+            });
+            setStep(2);
+            console.log('Outer boundary selected. Click to add islands or press Enter to finish');
+          }
+        } else {
+          console.log('No closed boundary found');
+        }
+      } else if (step === 2) {
+        // Select islands (inner boundaries)
+        let minD = 20.0;
+        let targetEnt: Entity | null = null;
+
+        entities.forEach(ent => {
+          if (!ent.visible) return;
+          if (ent.type !== 'LWPOLYLINE' && ent.type !== 'CIRCLE' &&
+              ent.type !== 'ELLIPSE' && ent.type !== 'SPLINE') {
+            return;
+          }
+
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < minD) {
+            minD = d;
+            targetEnt = ent;
+          }
+        });
+
+        if (targetEnt) {
+          const islandBoundary = convertToBoundary(targetEnt);
+          if (islandBoundary) {
+            const islands = commandState.islands || [];
+            islands.push(islandBoundary);
+            setCommandState({
+              ...commandState,
+              islands
+            });
+            console.log(`Island ${islands.length} added. Click for more islands or press Enter to finish`);
+          }
+        }
       }
     } else if (activeCommand === 'ERASE') {
       if (selectedIds.size === 0) {
@@ -3656,6 +3680,41 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       } else {
         console.log('Select at least 2 objects to join');
       }
+    } else if (activeCommand === 'HATCH' && step === 2 && value === '') {
+      // Enter pressed - finish hatch with selected islands
+      const { outerBoundary, islands, hatchParams } = commandState;
+
+      if (!outerBoundary) {
+        console.log('No outer boundary selected');
+        cancelCommand();
+        return;
+      }
+
+      captureBeforeState();
+
+      const hatchEntity: any = {
+        type: 'HATCH',
+        boundary: outerBoundary,
+        pattern: hatchParams.pattern || { name: 'ANSI31', type: 'predefined', angle: 45 },
+        scale: hatchParams.scale || 1.0,
+        rotation: hatchParams.rotation || 0,
+        color: hatchParams.color || outerBoundary.color,
+        layer: outerBoundary.layer,
+        id: Date.now() + Math.random(),
+      };
+
+      if (islands && islands.length > 0) {
+        hatchEntity.islands = islands;
+      }
+
+      addEntity(hatchEntity as Entity);
+      createHistoryItem('HATCH' as CommandType);
+
+      console.log(`Hatch created with ${islands?.length || 0} island(s)`);
+
+      // Reset to step 1 for another hatch
+      setStep(1);
+      setCommandState({});
     } else if (activeCommand === 'BLOCK' && step === 1 && value === '') {
       // Enter pressed - move to selecting base point
       if (selectedIds.size > 0) {

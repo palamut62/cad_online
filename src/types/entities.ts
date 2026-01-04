@@ -209,7 +209,8 @@ export type DimensionType =
 
 export interface HatchEntity extends BaseEntity {
   type: 'HATCH';
-  boundary: LWPolylineEntity; // Boundary as closed polyline
+  boundary: LWPolylineEntity; // Outer boundary as closed polyline
+  islands?: LWPolylineEntity[]; // Inner boundaries (holes) that are not hatched
   pattern: HatchPattern;
   scale: number;
   rotation: number;
