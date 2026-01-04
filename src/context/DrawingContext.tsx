@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useRef, useMem
 import type { Entity, Point } from '../types/entities';
 import type { CommandType } from '../types/commands';
 import { closestPointOnEntity, rotatePoint as rotatePt, scalePoint as scalePt, translatePoint as translatePt, mirrorPoint as mirrorPt, getClosestSnapPoint, SnapPoint, GripPoint, distance2D, isEntityInBox, doesEntityIntersectBox } from '../utils/geometryUtils';
+import { trimLineEntity, trimArcEntity, trimCircleEntity, extendLineEntity, extendArcEntity } from '../utils/intersectionUtils';
 import { debounce } from '../utils/performance';
 import { HistoryManager } from '../utils/historyManager';
 import { calculateDimensionGeometry } from '../utils/dimensionUtils';
@@ -1710,107 +1711,131 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         clearSelection();
       }
     } else if (activeCommand === 'HATCH') {
-      let minD = 20.0; // Selection threshold (artırıldı)
-      let targetEnt: Entity | null = null;
+      // HATCH: Create hatch with optional islands
+      // Step 1: Select outer boundary
+      // Step 2+: Select inner boundaries (islands) - press Enter to finish
 
-      entities.forEach(ent => {
-        if (!ent.visible) return;
-        // Hatchable entities: LWPOLYLINE (closed or open - will be auto-closed), CIRCLE, ELLIPSE
-        if (ent.type === 'LWPOLYLINE') {
-          // Allow ALL Polylines. We will force them closed in boundary creation.
+      const convertToBoundary = (ent: Entity): any => {
+        if (ent.type === 'CIRCLE') {
+          const pts: Point[] = [];
+          const segs = 64;
+          for (let i = 0; i < segs; i++) {
+            const t = (i / segs) * Math.PI * 2;
+            pts.push([
+              (ent as any).center[0] + Math.cos(t) * (ent as any).radius,
+              (ent as any).center[1] + Math.sin(t) * (ent as any).radius,
+              0
+            ]);
+          }
+          return {
+            type: 'LWPOLYLINE',
+            vertices: pts,
+            closed: true,
+            color: ent.color,
+            layer: ent.layer,
+            id: ent.id
+          };
+        } else if (ent.type === 'ELLIPSE') {
+          const pts: Point[] = [];
+          const segs = 64;
+          for (let i = 0; i < segs; i++) {
+            const t = (i / segs) * Math.PI * 2;
+            pts.push([
+              (ent as any).center[0] + Math.cos(t) * (ent as any).rx,
+              (ent as any).center[1] + Math.sin(t) * (ent as any).ry,
+              0
+            ]);
+          }
+          return {
+            type: 'LWPOLYLINE',
+            vertices: pts,
+            closed: true,
+            color: ent.color,
+            layer: ent.layer,
+            id: ent.id
+          };
         } else if (ent.type === 'SPLINE') {
-          // Allow Splines (assuming they form a loop or user wants to hatch them anyway)
-        } else if (ent.type !== 'CIRCLE' && ent.type !== 'ELLIPSE') {
-          return;
-        }
-
-        const d = closestPointOnEntity(point[0], point[1], ent);
-        if (d < minD) {
-          minD = d;
-          targetEnt = ent;
-        }
-      });
-
-      if (targetEnt) {
-        let boundary: any = targetEnt;
-        const tEnt = targetEnt as Entity;
-
-        if (tEnt.type === 'CIRCLE') {
-          // Approximate circle as polyline
-          const pts: Point[] = [];
-          const segs = 64;
-          for (let i = 0; i < segs; i++) {
-            const t = (i / segs) * Math.PI * 2;
-            pts.push([
-              tEnt.center[0] + Math.cos(t) * tEnt.radius,
-              tEnt.center[1] + Math.sin(t) * tEnt.radius,
-              0
-            ]);
-          }
-          boundary = {
+          return {
             type: 'LWPOLYLINE',
-            vertices: pts,
+            vertices: (ent as any).controlPoints,
             closed: true,
-            color: tEnt.color,
-            layer: tEnt.layer,
-            id: tEnt.id
+            color: ent.color,
+            layer: ent.layer,
+            id: ent.id
           };
-        } else if (tEnt.type === 'ELLIPSE') {
-          // Approximate ellipse as polyline
-          const pts: Point[] = [];
-          const segs = 64;
-          for (let i = 0; i < segs; i++) {
-            const t = (i / segs) * Math.PI * 2;
-            pts.push([
-              tEnt.center[0] + Math.cos(t) * tEnt.rx,
-              tEnt.center[1] + Math.sin(t) * tEnt.ry,
-              0
-            ]);
-          }
-          boundary = {
-            type: 'LWPOLYLINE',
-            vertices: pts,
-            closed: true,
-            color: tEnt.color,
-            layer: tEnt.layer,
-            id: tEnt.id
-          };
-        } else if (tEnt.type === 'SPLINE') {
-          // Approximate spline as polyline (using control points as vertices for now)
-          // Ideally needs curve interpolation, but this is a start
-          boundary = {
-            type: 'LWPOLYLINE',
-            vertices: tEnt.controlPoints,
-            closed: true, // Force closed
-            color: tEnt.color,
-            layer: tEnt.layer,
-            id: tEnt.id
-          };
-        } else if (tEnt.type === 'LWPOLYLINE') {
-          // Ensure the boundary is treated as closed for hatching
-          boundary = {
-            ...tEnt,
+        } else if (ent.type === 'LWPOLYLINE') {
+          return {
+            ...ent,
             closed: true
           };
         }
+        return null;
+      };
 
-        // Get hatch params from commandState or defaults
-        const hatchParams = commandState.hatchParams || { scale: 1, rotation: 0, pattern: { name: 'ANSI31', type: 'predefined', angle: 45 } };
+      if (step === 1) {
+        // Select outer boundary
+        let minD = 20.0;
+        let targetEnt: Entity | null = null;
 
-        addEntity({
-          type: 'HATCH',
-          boundary: boundary,
-          pattern: hatchParams.pattern || { name: 'ANSI31', type: 'predefined', angle: 45 },
-          scale: hatchParams.scale || 1.0,
-          rotation: hatchParams.rotation || 0,
-          color: hatchParams.color || tEnt.color,
-          layer: tEnt.layer
+        entities.forEach(ent => {
+          if (!ent.visible) return;
+          if (ent.type !== 'LWPOLYLINE' && ent.type !== 'CIRCLE' &&
+              ent.type !== 'ELLIPSE' && ent.type !== 'SPLINE') {
+            return;
+          }
+
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < minD) {
+            minD = d;
+            targetEnt = ent;
+          }
         });
-        console.log("Hatch created");
-        // Komut kalıcı - ESC'ye basılana kadar tekrar kullanılabilir
-        // cancelCommand() kaldırıldı
-      } else {
-        console.log("No closed boundary found.");
+
+        if (targetEnt) {
+          const boundary = convertToBoundary(targetEnt);
+          if (boundary) {
+            setCommandState({
+              outerBoundary: boundary,
+              islands: [],
+              hatchParams: { scale: 1, rotation: 0, pattern: { name: 'ANSI31', type: 'predefined', angle: 45 } }
+            });
+            setStep(2);
+            console.log('Outer boundary selected. Click to add islands or press Enter to finish');
+          }
+        } else {
+          console.log('No closed boundary found');
+        }
+      } else if (step === 2) {
+        // Select islands (inner boundaries)
+        let minD = 20.0;
+        let targetEnt: Entity | null = null;
+
+        entities.forEach(ent => {
+          if (!ent.visible) return;
+          if (ent.type !== 'LWPOLYLINE' && ent.type !== 'CIRCLE' &&
+              ent.type !== 'ELLIPSE' && ent.type !== 'SPLINE') {
+            return;
+          }
+
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < minD) {
+            minD = d;
+            targetEnt = ent;
+          }
+        });
+
+        if (targetEnt) {
+          const islandBoundary = convertToBoundary(targetEnt);
+          if (islandBoundary) {
+            const islands = commandState.islands || [];
+            islands.push(islandBoundary);
+            setCommandState({
+              ...commandState,
+              islands
+            });
+            console.log(`Island ${islands.length} added. Click for more islands or press Enter to finish`);
+          }
+        }
       }
     } else if (activeCommand === 'ERASE') {
       if (selectedIds.size === 0) {
@@ -1872,11 +1897,961 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             if (newRadius > 0) {
               newEnt = { ...ent, id: Date.now() + Math.random(), radius: newRadius } as Entity;
             }
+          } else if (ent.type === 'LWPOLYLINE') {
+            // Offset polyline - simplified version (offset all vertices perpendicular)
+            const vertices = (ent as any).vertices;
+            const newVertices: Point[] = [];
+
+            // Calculate which side to offset based on click point
+            // Use first segment for direction determination
+            if (vertices.length >= 2) {
+              const dx = vertices[1][0] - vertices[0][0];
+              const dy = vertices[1][1] - vertices[0][1];
+              const len = Math.hypot(dx, dy);
+              const nx = -dy / len;
+              const ny = dx / len;
+
+              const vx = point[0] - vertices[0][0];
+              const vy = point[1] - vertices[0][1];
+              const dot = vx * nx + vy * ny;
+              const sign = dot > 0 ? 1 : -1;
+
+              // Offset each vertex
+              for (let i = 0; i < vertices.length; i++) {
+                const v = vertices[i];
+
+                // Calculate perpendicular direction for this vertex
+                let perpX = 0, perpY = 0;
+
+                if (i === 0 && !((ent as any).closed)) {
+                  // First vertex (if not closed)
+                  const dx = vertices[1][0] - v[0];
+                  const dy = vertices[1][1] - v[1];
+                  const len = Math.hypot(dx, dy);
+                  perpX = -dy / len;
+                  perpY = dx / len;
+                } else if (i === vertices.length - 1 && !((ent as any).closed)) {
+                  // Last vertex (if not closed)
+                  const dx = v[0] - vertices[i - 1][0];
+                  const dy = v[1] - vertices[i - 1][1];
+                  const len = Math.hypot(dx, dy);
+                  perpX = -dy / len;
+                  perpY = dx / len;
+                } else {
+                  // Middle vertex - average of adjacent segments
+                  const prevIdx = i === 0 ? vertices.length - 1 : i - 1;
+                  const nextIdx = i === vertices.length - 1 ? 0 : i + 1;
+
+                  const dx1 = v[0] - vertices[prevIdx][0];
+                  const dy1 = v[1] - vertices[prevIdx][1];
+                  const len1 = Math.hypot(dx1, dy1);
+                  const perp1X = -dy1 / len1;
+                  const perp1Y = dx1 / len1;
+
+                  const dx2 = vertices[nextIdx][0] - v[0];
+                  const dy2 = vertices[nextIdx][1] - v[1];
+                  const len2 = Math.hypot(dx2, dy2);
+                  const perp2X = -dy2 / len2;
+                  const perp2Y = dx2 / len2;
+
+                  perpX = (perp1X + perp2X) / 2;
+                  perpY = (perp1Y + perp2Y) / 2;
+                  const perpLen = Math.hypot(perpX, perpY);
+                  if (perpLen > 0.001) {
+                    perpX /= perpLen;
+                    perpY /= perpLen;
+                  }
+                }
+
+                newVertices.push([
+                  v[0] + perpX * sign * distance,
+                  v[1] + perpY * sign * distance,
+                  v[2]
+                ]);
+              }
+
+              newEnt = {
+                ...ent,
+                id: Date.now() + Math.random(),
+                vertices: newVertices
+              } as Entity;
+            }
           }
 
           if (newEnt) addEntity(newEnt);
         }
         setStep(2); // Loop back for multiple offsets
+      }
+    } else if (activeCommand === 'TRIM') {
+      // Step 1: Select cutting edges (can select multiple, press Enter to finish)
+      // Step 2: Select objects to trim
+      if (step === 1) {
+        // Selecting cutting edges
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          setSelectedIds(prev => new Set([...prev, closestId!]));
+          setCommandState(prev => ({
+            ...prev,
+            cuttingEdges: [...(prev.cuttingEdges || []), closestId]
+          }));
+        }
+      } else if (step === 2) {
+        // Trimming objects
+        const cuttingEdgeIds = commandState.cuttingEdges || [];
+        const cuttingEdges = entities.filter(e => cuttingEdgeIds.includes(e.id));
+
+        if (cuttingEdges.length === 0) {
+          console.log('No cutting edges selected');
+          return;
+        }
+
+        // Find entity to trim at click point
+        let minD = Infinity;
+        let targetEntity: Entity | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (cuttingEdgeIds.includes(ent.id)) return; // Skip cutting edges
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            targetEntity = ent;
+          }
+        });
+
+        if (targetEntity) {
+          captureBeforeState();
+          let newEntities: Entity[] = [];
+
+          if (targetEntity.type === 'LINE') {
+            newEntities = trimLineEntity(targetEntity, point, cuttingEdges);
+          } else if (targetEntity.type === 'ARC') {
+            newEntities = trimArcEntity(targetEntity, point, cuttingEdges);
+          } else if (targetEntity.type === 'CIRCLE') {
+            newEntities = trimCircleEntity(targetEntity, point, cuttingEdges);
+          }
+
+          // Delete original entity
+          deleteEntities(new Set([targetEntity.id]));
+
+          // Add new trimmed entities
+          newEntities.forEach(ent => addEntity(ent));
+
+          createHistoryItem('TRIM' as CommandType);
+        }
+        // Stay in step 2 for multiple trims
+      }
+    } else if (activeCommand === 'EXTEND') {
+      // Step 1: Select boundary edges (can select multiple, press Enter to finish)
+      // Step 2: Select objects to extend
+      if (step === 1) {
+        // Selecting boundary edges
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          setSelectedIds(prev => new Set([...prev, closestId!]));
+          setCommandState(prev => ({
+            ...prev,
+            boundaries: [...(prev.boundaries || []), closestId]
+          }));
+        }
+      } else if (step === 2) {
+        // Extending objects
+        const boundaryIds = commandState.boundaries || [];
+        const boundaries = entities.filter(e => boundaryIds.includes(e.id));
+
+        if (boundaries.length === 0) {
+          console.log('No boundary edges selected');
+          return;
+        }
+
+        // Find entity to extend at click point
+        let minD = Infinity;
+        let targetEntity: Entity | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (boundaryIds.includes(ent.id)) return; // Skip boundaries
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            targetEntity = ent;
+          }
+        });
+
+        if (targetEntity) {
+          captureBeforeState();
+          let extendedEntity: Entity | null = null;
+
+          if (targetEntity.type === 'LINE') {
+            extendedEntity = extendLineEntity(targetEntity, point, boundaries);
+          } else if (targetEntity.type === 'ARC') {
+            extendedEntity = extendArcEntity(targetEntity, point, boundaries);
+          }
+
+          if (extendedEntity && extendedEntity !== targetEntity) {
+            updateEntity(targetEntity.id, extendedEntity);
+            createHistoryItem('EXTEND' as CommandType);
+          }
+        }
+        // Stay in step 2 for multiple extends
+      }
+    } else if (activeCommand === 'BREAK') {
+      // Step 1: Select object to break
+      // Step 2: First break point
+      // Step 3: Second break point
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const targetEntity = entities.find(e => e.id === closestId);
+          if (targetEntity) {
+            setCommandState({ targetEntity, firstBreakPoint: point });
+            setTempPoints([point]);
+            setStep(2);
+          }
+        }
+      } else if (step === 2) {
+        const { targetEntity, firstBreakPoint } = commandState;
+        if (!targetEntity) return;
+
+        captureBeforeState();
+        const secondBreakPoint = point;
+
+        if (targetEntity.type === 'LINE') {
+          const line = targetEntity;
+          // Calculate t parameters for both points
+          const dx = line.end[0] - line.start[0];
+          const dy = line.end[1] - line.start[1];
+          const len = Math.sqrt(dx * dx + dy * dy);
+
+          if (len < 0.0001) return;
+
+          const t1 = ((firstBreakPoint[0] - line.start[0]) * dx + (firstBreakPoint[1] - line.start[1]) * dy) / (len * len);
+          const t2 = ((secondBreakPoint[0] - line.start[0]) * dx + (secondBreakPoint[1] - line.start[1]) * dy) / (len * len);
+
+          const tMin = Math.max(0, Math.min(t1, t2));
+          const tMax = Math.min(1, Math.max(t1, t2));
+
+          const breakPoint1: Point = [
+            line.start[0] + tMin * dx,
+            line.start[1] + tMin * dy,
+            0
+          ];
+          const breakPoint2: Point = [
+            line.start[0] + tMax * dx,
+            line.start[1] + tMax * dy,
+            0
+          ];
+
+          // Delete original line
+          deleteEntities(new Set([targetEntity.id]));
+
+          // Add two new line segments (if they exist)
+          if (tMin > 0.001) {
+            addEntity({
+              ...line,
+              id: Date.now() + Math.random(),
+              start: line.start,
+              end: breakPoint1,
+            });
+          }
+          if (tMax < 0.999) {
+            addEntity({
+              ...line,
+              id: Date.now() + Math.random() + 0.001,
+              start: breakPoint2,
+              end: line.end,
+            });
+          }
+
+          createHistoryItem('BREAK' as CommandType);
+        } else if (targetEntity.type === 'CIRCLE') {
+          const circle = targetEntity;
+          const angle1 = Math.atan2(firstBreakPoint[1] - circle.center[1], firstBreakPoint[0] - circle.center[0]);
+          const angle2 = Math.atan2(secondBreakPoint[1] - circle.center[1], secondBreakPoint[0] - circle.center[0]);
+
+          // Delete original circle
+          deleteEntities(new Set([targetEntity.id]));
+
+          // Create arc from the remaining portion
+          addEntity({
+            type: 'ARC',
+            center: circle.center,
+            radius: circle.radius,
+            startAngle: angle2,
+            endAngle: angle1,
+            color: circle.color,
+            layer: circle.layer,
+            id: Date.now() + Math.random(),
+          } as Entity);
+
+          createHistoryItem('BREAK' as CommandType);
+        } else if (targetEntity.type === 'ARC') {
+          const arc = targetEntity;
+
+          // Calculate angles for break points
+          const angle1 = Math.atan2(firstBreakPoint[1] - arc.center[1], firstBreakPoint[0] - arc.center[0]);
+          const angle2 = Math.atan2(secondBreakPoint[1] - arc.center[1], secondBreakPoint[0] - arc.center[0]);
+
+          // Normalize angles
+          const normalizeAngle = (a: number, ref: number) => {
+            let normalized = a;
+            while (normalized < ref) normalized += Math.PI * 2;
+            while (normalized > ref + Math.PI * 2) normalized -= Math.PI * 2;
+            return normalized;
+          };
+
+          const norm1 = normalizeAngle(angle1, arc.startAngle);
+          const norm2 = normalizeAngle(angle2, arc.startAngle);
+          const normEnd = normalizeAngle(arc.endAngle, arc.startAngle);
+
+          const angleMin = Math.min(norm1, norm2);
+          const angleMax = Math.max(norm1, norm2);
+
+          // Delete original arc
+          deleteEntities(new Set([targetEntity.id]));
+
+          // Add two arc segments (if they exist)
+          if (angleMin > arc.startAngle + 0.001) {
+            addEntity({
+              ...arc,
+              id: Date.now() + Math.random(),
+              startAngle: arc.startAngle,
+              endAngle: angleMin,
+            } as Entity);
+          }
+          if (angleMax < normEnd - 0.001) {
+            addEntity({
+              ...arc,
+              id: Date.now() + Math.random() + 0.001,
+              startAngle: angleMax,
+              endAngle: arc.endAngle,
+            } as Entity);
+          }
+
+          createHistoryItem('BREAK' as CommandType);
+        }
+
+        cancelCommand();
+      }
+    } else if (activeCommand === 'JOIN') {
+      // Step 1: Select multiple objects to join (press Enter when done)
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE' && ent.type !== 'ARC') return; // Only lines and arcs can be joined
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null && !selectedIds.has(closestId)) {
+          setSelectedIds(prev => new Set([...prev, closestId!]));
+        }
+      }
+    } else if (activeCommand === 'EXPLODE') {
+      // Select objects and explode them immediately
+      if (selectedIds.size === 0) {
+        // Select an object
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          setSelectedIds(new Set([closestId]));
+        }
+      } else {
+        // Explode selected objects
+        captureBeforeState();
+        const toDelete: number[] = [];
+        const toAdd: Entity[] = [];
+
+        selectedIds.forEach(id => {
+          const ent = entities.find(e => e.id === id);
+          if (!ent) return;
+
+          if (ent.type === 'LWPOLYLINE') {
+            // Explode polyline into lines
+            const vertices = (ent as any).vertices;
+            for (let i = 0; i < vertices.length - 1; i++) {
+              toAdd.push({
+                type: 'LINE',
+                start: vertices[i],
+                end: vertices[i + 1],
+                color: ent.color,
+                layer: ent.layer,
+                id: Date.now() + Math.random() + i * 0.001,
+              } as Entity);
+            }
+            if ((ent as any).closed && vertices.length > 2) {
+              toAdd.push({
+                type: 'LINE',
+                start: vertices[vertices.length - 1],
+                end: vertices[0],
+                color: ent.color,
+                layer: ent.layer,
+                id: Date.now() + Math.random() + vertices.length * 0.001,
+              } as Entity);
+            }
+            toDelete.push(id);
+          } else if (ent.type === 'RECTANGLE') {
+            // Explode rectangle into 4 lines (if RECTANGLE type exists separately)
+            // Currently rectangles are stored as LWPOLYLINE, so this may not be needed
+          }
+        });
+
+        // Delete original entities
+        deleteEntities(new Set(toDelete));
+
+        // Add exploded entities
+        toAdd.forEach(ent => addEntity(ent));
+
+        if (toAdd.length > 0) {
+          createHistoryItem('EXPLODE' as CommandType);
+        }
+
+        cancelCommand();
+        clearSelection();
+      }
+    } else if (activeCommand === 'FILLET') {
+      // Step 1: Select first line
+      // Step 2: Select second line
+      // Radius input via handleValueInput
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE') return; // Only lines for now
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const firstLine = entities.find(e => e.id === closestId);
+          if (firstLine) {
+            setCommandState({ firstLine, radius: commandState.radius || 5 });
+            setStep(2);
+          }
+        }
+      } else if (step === 2) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE') return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const secondLine = entities.find(e => e.id === closestId);
+          if (secondLine && commandState.firstLine) {
+            captureBeforeState();
+
+            const line1 = commandState.firstLine as any;
+            const line2 = secondLine as any;
+            const radius = commandState.radius || 5;
+
+            // Find intersection point
+            const dx1 = line1.end[0] - line1.start[0];
+            const dy1 = line1.end[1] - line1.start[1];
+            const dx2 = line2.end[0] - line2.start[0];
+            const dy2 = line2.end[1] - line2.start[1];
+
+            const denom = dx1 * dy2 - dy1 * dx2;
+            if (Math.abs(denom) > 0.001) {
+              const t = ((line2.start[0] - line1.start[0]) * dy2 - (line2.start[1] - line1.start[1]) * dx2) / denom;
+              const intersectionPoint: Point = [
+                line1.start[0] + t * dx1,
+                line1.start[1] + t * dy1,
+                0
+              ];
+
+              // Calculate perpendicular vectors
+              const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+              const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+              const dir1: Point = [dx1 / len1, dy1 / len1, 0];
+              const dir2: Point = [dx2 / len2, dy2 / len2, 0];
+
+              // Calculate fillet center
+              const angle = Math.acos(dir1[0] * dir2[0] + dir1[1] * dir2[1]);
+              const dist = radius / Math.tan(angle / 2);
+
+              const filletStart: Point = [
+                intersectionPoint[0] - dir1[0] * dist,
+                intersectionPoint[1] - dir1[1] * dist,
+                0
+              ];
+              const filletEnd: Point = [
+                intersectionPoint[0] - dir2[0] * dist,
+                intersectionPoint[1] - dir2[1] * dist,
+                0
+              ];
+
+              // Perpendicular direction for center
+              const perpDir1: Point = [-dir1[1], dir1[0], 0];
+              const perpDir2: Point = [-dir2[1], dir2[0], 0];
+
+              // Determine which side
+              const cross = dir1[0] * dir2[1] - dir1[1] * dir2[0];
+              const sign = cross > 0 ? 1 : -1;
+
+              const centerOffset: Point = [
+                (perpDir1[0] + perpDir2[0]) / 2,
+                (perpDir1[1] + perpDir2[1]) / 2,
+                0
+              ];
+              const centerOffsetLen = Math.sqrt(centerOffset[0] * centerOffset[0] + centerOffset[1] * centerOffset[1]);
+
+              const filletCenter: Point = [
+                (filletStart[0] + filletEnd[0]) / 2 + sign * (centerOffset[0] / centerOffsetLen) * radius,
+                (filletStart[1] + filletEnd[1]) / 2 + sign * (centerOffset[1] / centerOffsetLen) * radius,
+                0
+              ];
+
+              // Calculate arc angles
+              const startAngle = Math.atan2(filletStart[1] - filletCenter[1], filletStart[0] - filletCenter[0]);
+              const endAngle = Math.atan2(filletEnd[1] - filletCenter[1], filletEnd[0] - filletCenter[0]);
+
+              // Trim lines and add arc
+              updateEntity(line1.id, {
+                ...line1,
+                end: filletStart,
+              });
+              updateEntity(line2.id, {
+                ...line2,
+                end: filletEnd,
+              });
+
+              addEntity({
+                type: 'ARC',
+                center: filletCenter,
+                radius,
+                startAngle,
+                endAngle,
+                color: line1.color,
+                layer: line1.layer,
+                id: Date.now() + Math.random(),
+              } as Entity);
+
+              createHistoryItem('FILLET' as CommandType);
+            }
+
+            cancelCommand();
+          }
+        }
+      }
+    } else if (activeCommand === 'CHAMFER') {
+      // Step 1: Select first line
+      // Step 2: Select second line
+      // Distance input via handleValueInput
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE') return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const firstLine = entities.find(e => e.id === closestId);
+          if (firstLine) {
+            setCommandState({ firstLine, distance: commandState.distance || 5 });
+            setStep(2);
+          }
+        }
+      } else if (step === 2) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE') return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const secondLine = entities.find(e => e.id === closestId);
+          if (secondLine && commandState.firstLine) {
+            captureBeforeState();
+
+            const line1 = commandState.firstLine as any;
+            const line2 = secondLine as any;
+            const distance = commandState.distance || 5;
+
+            // Find intersection point
+            const dx1 = line1.end[0] - line1.start[0];
+            const dy1 = line1.end[1] - line1.start[1];
+            const dx2 = line2.end[0] - line2.start[0];
+            const dy2 = line2.end[1] - line2.start[1];
+
+            const denom = dx1 * dy2 - dy1 * dx2;
+            if (Math.abs(denom) > 0.001) {
+              const t = ((line2.start[0] - line1.start[0]) * dy2 - (line2.start[1] - line1.start[1]) * dx2) / denom;
+              const intersectionPoint: Point = [
+                line1.start[0] + t * dx1,
+                line1.start[1] + t * dy1,
+                0
+              ];
+
+              // Calculate direction vectors
+              const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+              const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+              const dir1: Point = [dx1 / len1, dy1 / len1, 0];
+              const dir2: Point = [dx2 / len2, dy2 / len2, 0];
+
+              // Chamfer points
+              const chamferStart: Point = [
+                intersectionPoint[0] - dir1[0] * distance,
+                intersectionPoint[1] - dir1[1] * distance,
+                0
+              ];
+              const chamferEnd: Point = [
+                intersectionPoint[0] - dir2[0] * distance,
+                intersectionPoint[1] - dir2[1] * distance,
+                0
+              ];
+
+              // Trim lines and add chamfer line
+              updateEntity(line1.id, {
+                ...line1,
+                end: chamferStart,
+              });
+              updateEntity(line2.id, {
+                ...line2,
+                end: chamferEnd,
+              });
+
+              addEntity({
+                type: 'LINE',
+                start: chamferStart,
+                end: chamferEnd,
+                color: line1.color,
+                layer: line1.layer,
+                id: Date.now() + Math.random(),
+              } as Entity);
+
+              createHistoryItem('CHAMFER' as CommandType);
+            }
+
+            cancelCommand();
+          }
+        }
+      }
+    } else if (activeCommand === 'ARRAY') {
+      // Step 1: Select objects to array
+      // Step 2: Specify array type (R=Rectangular, P=Polar) via handleValueInput
+      // Step 3: Specify parameters and execute
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null && !selectedIds.has(closestId)) {
+          setSelectedIds(prev => new Set([...prev, closestId!]));
+        }
+      } else if (step === 2) {
+        // Center point for polar array
+        setCommandState(prev => ({ ...prev, centerPoint: point }));
+        setStep(3);
+      } else if (step === 3) {
+        // Execute array after parameters are set
+        const arrayType = commandState.arrayType || 'RECTANGULAR';
+        if (selectedIds.size === 0) return;
+
+        captureBeforeState();
+        const selectedEntities = entities.filter(e => selectedIds.has(e.id));
+
+        if (arrayType === 'RECTANGULAR') {
+          const rows = commandState.rows || 3;
+          const cols = commandState.cols || 3;
+          const rowSpacing = commandState.rowSpacing || 10;
+          const colSpacing = commandState.colSpacing || 10;
+
+          for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+              if (row === 0 && col === 0) continue; // Skip original
+
+              const dx = col * colSpacing;
+              const dy = -row * rowSpacing;
+
+              selectedEntities.forEach(ent => {
+                let newEnt = { ...ent, id: Date.now() + Math.random() + row * 100 + col };
+
+                if (ent.type === 'LINE') {
+                  (newEnt as any).start = translatePt((ent as any).start, dx, dy);
+                  (newEnt as any).end = translatePt((ent as any).end, dx, dy);
+                } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+                  (newEnt as any).center = translatePt((ent as any).center, dx, dy);
+                } else if (ent.type === 'LWPOLYLINE') {
+                  (newEnt as any).vertices = (ent as any).vertices.map((v: Point) => translatePt(v, dx, dy));
+                } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+                  (newEnt as any).position = translatePt((ent as any).position, dx, dy);
+                } else if (ent.type === 'RAY' || ent.type === 'XLINE') {
+                  (newEnt as any).origin = translatePt((ent as any).origin, dx, dy);
+                }
+
+                addEntity(newEnt as Entity);
+              });
+            }
+          }
+        } else if (arrayType === 'POLAR') {
+          const items = commandState.items || 6;
+          const centerPoint = commandState.centerPoint || [0, 0, 0] as Point;
+          const fillAngle = commandState.fillAngle || 360;
+          const angleStep = (fillAngle * Math.PI / 180) / items;
+
+          for (let i = 1; i < items; i++) {
+            const angle = angleStep * i;
+
+            selectedEntities.forEach(ent => {
+              let newEnt = { ...ent, id: Date.now() + Math.random() + i * 1000 };
+
+              if (ent.type === 'LINE') {
+                (newEnt as any).start = rotatePt((ent as any).start, centerPoint, angle);
+                (newEnt as any).end = rotatePt((ent as any).end, centerPoint, angle);
+              } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+                (newEnt as any).center = rotatePt((ent as any).center, centerPoint, angle);
+                if (ent.type === 'ARC') {
+                  (newEnt as any).startAngle = (ent as any).startAngle + angle;
+                  (newEnt as any).endAngle = (ent as any).endAngle + angle;
+                } else if (ent.type === 'ELLIPSE') {
+                  (newEnt as any).rotation = ((ent as any).rotation || 0) + angle;
+                }
+              } else if (ent.type === 'LWPOLYLINE') {
+                (newEnt as any).vertices = (ent as any).vertices.map((v: Point) => rotatePt(v, centerPoint, angle));
+              } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+                (newEnt as any).position = rotatePt((ent as any).position, centerPoint, angle);
+                if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+                  (newEnt as any).rotation = ((ent as any).rotation || 0) + angle;
+                }
+              } else if (ent.type === 'RAY' || ent.type === 'XLINE') {
+                (newEnt as any).origin = rotatePt((ent as any).origin, centerPoint, angle);
+                // Rotate direction vector
+                const dir = (ent as any).direction;
+                const cosA = Math.cos(angle);
+                const sinA = Math.sin(angle);
+                (newEnt as any).direction = [
+                  dir[0] * cosA - dir[1] * sinA,
+                  dir[0] * sinA + dir[1] * cosA,
+                  0
+                ];
+              }
+
+              addEntity(newEnt as Entity);
+            });
+          }
+        }
+
+        createHistoryItem('ARRAY' as CommandType);
+        cancelCommand();
+        clearSelection();
+      }
+    } else if (activeCommand === 'STRETCH') {
+      // STRETCH: Crossing window selection, then base point and displacement
+      // Step 1: First corner of crossing window
+      // Step 2: Second corner of crossing window (select entities)
+      // Step 3: Base point
+      // Step 4: Displacement point (execute stretch)
+      if (step === 1) {
+        setTempPoints([point]);
+        setStep(2);
+      } else if (step === 2) {
+        const corner1 = tempPoints[0];
+        const corner2 = point;
+
+        // Create crossing window box
+        const minX = Math.min(corner1[0], corner2[0]);
+        const maxX = Math.max(corner1[0], corner2[0]);
+        const minY = Math.min(corner1[1], corner2[1]);
+        const maxY = Math.max(corner1[1], corner2[1]);
+
+        // Find entities to stretch
+        const toMove: number[] = []; // Completely inside - will move
+        const toStretch: number[] = []; // Crossing window - will stretch
+
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+
+          const isInside = isEntityInBox(ent, minX, minY, maxX, maxY);
+          const isCrossing = doesEntityIntersectBox(ent, minX, minY, maxX, maxY);
+
+          if (isInside) {
+            toMove.push(ent.id);
+          } else if (isCrossing) {
+            toStretch.push(ent.id);
+          }
+        });
+
+        setCommandState({
+          corner1,
+          corner2,
+          minX,
+          maxX,
+          minY,
+          maxY,
+          toMove,
+          toStretch
+        });
+        setTempPoints([point]);
+        setStep(3);
+      } else if (step === 3) {
+        // Base point
+        setTempPoints([point]);
+        setCommandState(prev => ({ ...prev, basePoint: point }));
+        setStep(4);
+      } else if (step === 4) {
+        // Displacement point - execute stretch
+        const { basePoint, toMove, toStretch, minX, maxX, minY, maxY } = commandState;
+        const dx = point[0] - basePoint[0];
+        const dy = point[1] - basePoint[1];
+
+        if (toMove.length === 0 && toStretch.length === 0) {
+          cancelCommand();
+          return;
+        }
+
+        captureBeforeState();
+
+        // Move entities completely inside
+        toMove.forEach((id: number) => {
+          const ent = entities.find(e => e.id === id);
+          if (!ent) return;
+
+          if (ent.type === 'LINE') {
+            updateEntity(id, {
+              start: translatePt((ent as any).start, dx, dy),
+              end: translatePt((ent as any).end, dx, dy),
+            });
+          } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+            updateEntity(id, {
+              center: translatePt((ent as any).center, dx, dy),
+            });
+          } else if (ent.type === 'LWPOLYLINE') {
+            updateEntity(id, {
+              vertices: (ent as any).vertices.map((v: Point) => translatePt(v, dx, dy)),
+            });
+          } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+            updateEntity(id, {
+              position: translatePt((ent as any).position, dx, dy),
+            });
+          } else if (ent.type === 'RAY' || ent.type === 'XLINE') {
+            updateEntity(id, {
+              origin: translatePt((ent as any).origin, dx, dy),
+            });
+          }
+        });
+
+        // Stretch entities crossing the window
+        toStretch.forEach((id: number) => {
+          const ent = entities.find(e => e.id === id);
+          if (!ent) return;
+
+          if (ent.type === 'LINE') {
+            const start = (ent as any).start;
+            const end = (ent as any).end;
+
+            // Check which endpoints are inside the box
+            const startInside = start[0] >= minX && start[0] <= maxX &&
+                               start[1] >= minY && start[1] <= maxY;
+            const endInside = end[0] >= minX && end[0] <= maxX &&
+                             end[1] >= minY && end[1] <= maxY;
+
+            updateEntity(id, {
+              start: startInside ? translatePt(start, dx, dy) : start,
+              end: endInside ? translatePt(end, dx, dy) : end,
+            });
+          } else if (ent.type === 'LWPOLYLINE') {
+            const vertices = (ent as any).vertices;
+            const newVertices = vertices.map((v: Point) => {
+              const vInside = v[0] >= minX && v[0] <= maxX &&
+                            v[1] >= minY && v[1] <= maxY;
+              return vInside ? translatePt(v, dx, dy) : v;
+            });
+
+            updateEntity(id, {
+              vertices: newVertices,
+            });
+          } else if (ent.type === 'ARC') {
+            // For arcs, if center is inside, move the whole arc
+            const center = (ent as any).center;
+            const centerInside = center[0] >= minX && center[0] <= maxX &&
+                                center[1] >= minY && center[1] <= maxY;
+
+            if (centerInside) {
+              updateEntity(id, {
+                center: translatePt(center, dx, dy),
+              });
+            }
+          }
+        });
+
+        createHistoryItem('STRETCH' as CommandType);
+        cancelCommand();
+        setCommandState({});
+        setTempPoints([]);
       }
     } else if (activeCommand === 'DIMLINEAR' || activeCommand === 'DIMALIGNED') {
       if (step === 1) {
@@ -2094,6 +3069,490 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           cancelCommand();
         }
       }
+    } else if (activeCommand === 'LEADER') {
+      // LEADER: Arrow with text annotation
+      // Step 1: Arrow start point
+      // Step 2: Arrow end point (tip)
+      // Step 3: Text position
+      // Step 4: Text input via dialog or prompt
+      if (step === 1) {
+        setTempPoints([point]);
+        setStep(2);
+      } else if (step === 2) {
+        setTempPoints(prev => [...prev, point]);
+        setStep(3);
+      } else if (step === 3) {
+        // Text position selected, now wait for text input
+        setTempPoints(prev => [...prev, point]);
+        setStep(4);
+
+        // Open text dialog for leader text
+        setTextDialogState({
+          isOpen: true,
+          initialText: '',
+          onSubmit: (text: string) => {
+            const startPoint = tempPoints[0];
+            const arrowTip = tempPoints[1];
+            const textPosition = point;
+
+            captureBeforeState();
+
+            // Create leader line from start to arrow tip
+            addEntity({
+              type: 'LINE',
+              start: startPoint,
+              end: arrowTip,
+              color: '#fff',
+              layer: '0',
+              id: Date.now() + Math.random(),
+            } as Entity);
+
+            // Create arrow head at tip
+            const dx = arrowTip[0] - startPoint[0];
+            const dy = arrowTip[1] - startPoint[1];
+            const angle = Math.atan2(dy, dx);
+            const arrowSize = 3;
+            const arrowAngle = Math.PI / 6; // 30 degrees
+
+            const arrow1: Point = [
+              arrowTip[0] - arrowSize * Math.cos(angle - arrowAngle),
+              arrowTip[1] - arrowSize * Math.sin(angle - arrowAngle),
+              0
+            ];
+            const arrow2: Point = [
+              arrowTip[0] - arrowSize * Math.cos(angle + arrowAngle),
+              arrowTip[1] - arrowSize * Math.sin(angle + arrowAngle),
+              0
+            ];
+
+            // Create arrow as filled triangle
+            addEntity({
+              type: 'LWPOLYLINE',
+              vertices: [arrowTip, arrow1, arrow2],
+              closed: true,
+              color: '#fff',
+              layer: '0',
+              id: Date.now() + Math.random() + 1,
+            } as Entity);
+
+            // Create horizontal line from arrow tip to text
+            const horizontalLineEnd: Point = [textPosition[0], arrowTip[1], 0];
+            addEntity({
+              type: 'LINE',
+              start: arrowTip,
+              end: horizontalLineEnd,
+              color: '#fff',
+              layer: '0',
+              id: Date.now() + Math.random() + 2,
+            } as Entity);
+
+            // Create text at text position
+            if (text && text.trim() !== '') {
+              addEntity({
+                type: 'TEXT',
+                position: textPosition,
+                text: text,
+                height: 2.5,
+                rotation: 0,
+                color: '#fff',
+                layer: '0',
+                id: Date.now() + Math.random() + 3,
+              } as Entity);
+            }
+
+            createHistoryItem('LEADER' as CommandType);
+            cancelCommand();
+            setTempPoints([]);
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+          },
+          onCancel: () => {
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            cancelCommand();
+          }
+        });
+      }
+    } else if (activeCommand === 'DIMCONTINUE') {
+      // DIMCONTINUE: Continue dimensioning from last dimension
+      // Step 1: Find last DIMLINEAR or DIMALIGNED dimension
+      // Step 2: Click next point to continue dimension
+      if (step === 1) {
+        // Find the most recent linear or aligned dimension
+        const lastDim = [...entities]
+          .reverse()
+          .find(e => e.type === 'DIMENSION' && (
+            (e as any).dimType === 'DIMLINEAR' ||
+            (e as any).dimType === 'DIMALIGNED'
+          ));
+
+        if (lastDim) {
+          setCommandState({
+            lastDimension: lastDim,
+            basePoint: (lastDim as any).end,
+            dimLinePosition: (lastDim as any).dimLinePosition
+          });
+          setTempPoints([(lastDim as any).end]);
+          setStep(2);
+        } else {
+          console.log('No previous linear or aligned dimension found');
+          cancelCommand();
+        }
+      } else if (step === 2) {
+        // Create new dimension continuing from last
+        const { lastDimension, basePoint, dimLinePosition } = commandState;
+        const type = (lastDimension as any).dimType === 'DIMLINEAR' ? 'linear' : 'aligned';
+
+        const geometry = calculateDimensionGeometry(basePoint, point, dimLinePosition, type);
+
+        addEntity({
+          type: 'DIMENSION',
+          dimType: (lastDimension as any).dimType,
+          start: basePoint,
+          end: point,
+          dimLinePosition: dimLinePosition,
+          textHeight: 2.5,
+          rotation: geometry.rotation,
+          color: '#ffffff',
+          layer: '0'
+        });
+
+        createHistoryItem('DIMCONTINUE' as CommandType);
+
+        // Update for next continue
+        setCommandState({
+          lastDimension: lastDimension,
+          basePoint: point,
+          dimLinePosition: dimLinePosition
+        });
+        setTempPoints([point]);
+        // Stay in command for multiple continues
+      }
+    } else if (activeCommand === 'DIMBASELINE') {
+      // DIMBASELINE: Create multiple dimensions from same baseline
+      // Step 1: Find last DIMLINEAR or DIMALIGNED dimension (use as baseline)
+      // Step 2-N: Click points to create dimensions from baseline
+      if (step === 1) {
+        // Find the most recent linear or aligned dimension
+        const lastDim = [...entities]
+          .reverse()
+          .find(e => e.type === 'DIMENSION' && (
+            (e as any).dimType === 'DIMLINEAR' ||
+            (e as any).dimType === 'DIMALIGNED'
+          ));
+
+        if (lastDim) {
+          setCommandState({
+            baselineDimension: lastDim,
+            basePoint: (lastDim as any).start,
+            dimLinePosition: (lastDim as any).dimLinePosition,
+            offsetMultiplier: 1
+          });
+          setTempPoints([(lastDim as any).start]);
+          setStep(2);
+        } else {
+          console.log('No previous linear or aligned dimension found');
+          cancelCommand();
+        }
+      } else if (step === 2) {
+        // Create new dimension from baseline
+        const { baselineDimension, basePoint, dimLinePosition, offsetMultiplier } = commandState;
+        const type = (baselineDimension as any).dimType === 'DIMLINEAR' ? 'linear' : 'aligned';
+
+        // Offset each baseline dimension by a fixed amount
+        const offset = 10; // Standard offset between baseline dimensions
+        const newDimLinePosition: Point = [
+          dimLinePosition[0],
+          dimLinePosition[1] - (offset * offsetMultiplier),
+          0
+        ];
+
+        const geometry = calculateDimensionGeometry(basePoint, point, newDimLinePosition, type);
+
+        addEntity({
+          type: 'DIMENSION',
+          dimType: (baselineDimension as any).dimType,
+          start: basePoint,
+          end: point,
+          dimLinePosition: newDimLinePosition,
+          textHeight: 2.5,
+          rotation: geometry.rotation,
+          color: '#ffffff',
+          layer: '0'
+        });
+
+        createHistoryItem('DIMBASELINE' as CommandType);
+
+        // Increment offset for next baseline dimension
+        setCommandState({
+          baselineDimension: baselineDimension,
+          basePoint: basePoint,
+          dimLinePosition: dimLinePosition,
+          offsetMultiplier: offsetMultiplier + 1
+        });
+        // Stay in command for multiple baselines
+      }
+    } else if (activeCommand === 'BLOCK') {
+      // BLOCK: Define a block from selected entities
+      // Step 1: Select entities (multiple selection)
+      // Step 2: Select base point
+      // Step 3: Enter block name via text input
+      if (step === 1) {
+        // Select entities
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null && !selectedIds.has(closestId)) {
+          setSelectedIds(prev => new Set([...prev, closestId!]));
+        }
+      } else if (step === 2) {
+        // Base point selected
+        if (selectedIds.size === 0) {
+          console.log('No entities selected for block');
+          cancelCommand();
+          return;
+        }
+
+        setCommandState({ basePoint: point });
+        setTempPoints([point]);
+        setStep(3);
+
+        // Open text dialog for block name
+        setTextDialogState({
+          isOpen: true,
+          initialText: '',
+          onSubmit: (blockName: string) => {
+            if (!blockName || blockName.trim() === '') {
+              console.log('Block name cannot be empty');
+              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+              cancelCommand();
+              return;
+            }
+
+            const { basePoint } = commandState;
+            const selectedEntities = entities.filter(e => selectedIds.has(e.id));
+
+            // Store block definition in commandState or global blocks storage
+            // For simplicity, we'll just group entities and convert selection to a block reference
+            // In a full CAD app, blocks would be stored separately and referenced
+
+            captureBeforeState();
+
+            // Create a BLOCK_REFERENCE entity that contains the selected entities
+            const blockEntities = selectedEntities.map(ent => {
+              // Store relative to base point
+              let relativeEnt = { ...ent };
+
+              if (ent.type === 'LINE') {
+                (relativeEnt as any).start = translatePt((ent as any).start, -basePoint[0], -basePoint[1]);
+                (relativeEnt as any).end = translatePt((ent as any).end, -basePoint[0], -basePoint[1]);
+              } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+                (relativeEnt as any).center = translatePt((ent as any).center, -basePoint[0], -basePoint[1]);
+              } else if (ent.type === 'LWPOLYLINE') {
+                (relativeEnt as any).vertices = (ent as any).vertices.map((v: Point) =>
+                  translatePt(v, -basePoint[0], -basePoint[1])
+                );
+              } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+                (relativeEnt as any).position = translatePt((ent as any).position, -basePoint[0], -basePoint[1]);
+              }
+
+              return relativeEnt;
+            });
+
+            // Delete original entities
+            deleteEntities(selectedIds);
+
+            // Create block reference at base point
+            addEntity({
+              type: 'BLOCK_REFERENCE',
+              name: blockName,
+              position: basePoint,
+              rotation: 0,
+              scale: [1, 1, 1],
+              entities: blockEntities,
+              color: '#fff',
+              layer: '0',
+              id: Date.now() + Math.random(),
+            } as Entity);
+
+            createHistoryItem('BLOCK' as CommandType);
+            clearSelection();
+            cancelCommand();
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+          },
+          onCancel: () => {
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            cancelCommand();
+          }
+        });
+      }
+    } else if (activeCommand === 'INSERT') {
+      // INSERT: Insert a block at a point
+      // Step 1: Enter block name via text input (or select from list)
+      // Step 2: Select insertion point
+      if (step === 1) {
+        // Open text dialog for block name
+        setTextDialogState({
+          isOpen: true,
+          initialText: '',
+          onSubmit: (blockName: string) => {
+            if (!blockName || blockName.trim() === '') {
+              console.log('Block name cannot be empty');
+              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+              cancelCommand();
+              return;
+            }
+
+            // Find block definition
+            const blockDef = entities.find(e =>
+              e.type === 'BLOCK_REFERENCE' && (e as any).name === blockName
+            );
+
+            if (!blockDef) {
+              console.log(`Block "${blockName}" not found`);
+              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+              cancelCommand();
+              return;
+            }
+
+            setCommandState({ blockDefinition: blockDef, blockName });
+            setStep(2);
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+          },
+          onCancel: () => {
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            cancelCommand();
+          }
+        });
+      } else if (step === 2) {
+        // Insertion point selected
+        const { blockDefinition, blockName } = commandState;
+
+        if (!blockDefinition) {
+          console.log('No block definition');
+          cancelCommand();
+          return;
+        }
+
+        captureBeforeState();
+
+        // Insert block entities at insertion point
+        const blockEntities = (blockDefinition as any).entities || [];
+        const insertionPoint = point;
+
+        blockEntities.forEach((ent: any) => {
+          let newEnt = { ...ent, id: Date.now() + Math.random() };
+
+          if (ent.type === 'LINE') {
+            (newEnt as any).start = translatePt(ent.start, insertionPoint[0], insertionPoint[1]);
+            (newEnt as any).end = translatePt(ent.end, insertionPoint[0], insertionPoint[1]);
+          } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+            (newEnt as any).center = translatePt(ent.center, insertionPoint[0], insertionPoint[1]);
+          } else if (ent.type === 'LWPOLYLINE') {
+            (newEnt as any).vertices = ent.vertices.map((v: Point) =>
+              translatePt(v, insertionPoint[0], insertionPoint[1])
+            );
+          } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+            (newEnt as any).position = translatePt(ent.position, insertionPoint[0], insertionPoint[1]);
+          }
+
+          addEntity(newEnt as Entity);
+        });
+
+        createHistoryItem('INSERT' as CommandType);
+        // Stay in command for multiple inserts
+        setStep(2);
+      }
+    } else if (activeCommand === 'BOUNDARY') {
+      // BOUNDARY: Create a closed boundary polyline at a point
+      // Detects closed region at click point and creates LWPOLYLINE
+
+      // Simple implementation: Find all nearby closed polylines or circles
+      // and create a copy at the same location
+
+      let minD = Infinity;
+      let closestClosedEntity: Entity | null = null;
+      const SELECT_THRESHOLD = 5.0;
+
+      entities.forEach(ent => {
+        if (ent.visible === false) return;
+
+        // Check if entity forms a closed boundary
+        if (ent.type === 'LWPOLYLINE' && (ent as any).closed) {
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestClosedEntity = ent;
+          }
+        } else if (ent.type === 'CIRCLE') {
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestClosedEntity = ent;
+          }
+        } else if (ent.type === 'RECTANGLE') {
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestClosedEntity = ent;
+          }
+        }
+      });
+
+      if (closestClosedEntity) {
+        captureBeforeState();
+
+        let boundaryEntity: Entity | null = null;
+
+        if (closestClosedEntity.type === 'LWPOLYLINE') {
+          // Copy the polyline
+          boundaryEntity = {
+            ...closestClosedEntity,
+            id: Date.now() + Math.random(),
+            color: '#0ff', // Cyan for boundary
+            layer: '0',
+          };
+        } else if (closestClosedEntity.type === 'CIRCLE') {
+          // Convert circle to polyline with vertices
+          const center = (closestClosedEntity as any).center;
+          const radius = (closestClosedEntity as any).radius;
+          const segments = 36;
+          const vertices: Point[] = [];
+
+          for (let i = 0; i < segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            vertices.push([
+              center[0] + Math.cos(angle) * radius,
+              center[1] + Math.sin(angle) * radius,
+              0
+            ]);
+          }
+
+          boundaryEntity = {
+            type: 'LWPOLYLINE',
+            vertices,
+            closed: true,
+            color: '#0ff',
+            layer: '0',
+            id: Date.now() + Math.random(),
+          } as Entity;
+        }
+
+        if (boundaryEntity) {
+          addEntity(boundaryEntity);
+          createHistoryItem('BOUNDARY' as CommandType);
+        }
+
+        // Stay in command for multiple boundaries
+      } else {
+        console.log('No closed boundary found at point');
+      }
     }
   }, [
     activeCommand,
@@ -2108,11 +3567,177 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     cancelCommand,
     toggleSelection,
     clearSelection,
+    setTextDialogState,
   ]);
 
   // Handle value input (text input)
   const handleValueInput = useCallback((value: string) => {
-    if (activeCommand === 'OFFSET' && step === 1) {
+    if (activeCommand === 'TRIM' && step === 1 && value === '') {
+      // Enter pressed - move to trimming step
+      if (commandState.cuttingEdges && commandState.cuttingEdges.length > 0) {
+        setStep(2);
+        clearSelection(); // Clear cutting edge selection highlights
+      } else {
+        console.log('No cutting edges selected');
+      }
+    } else if (activeCommand === 'EXTEND' && step === 1 && value === '') {
+      // Enter pressed - move to extending step
+      if (commandState.boundaries && commandState.boundaries.length > 0) {
+        setStep(2);
+        clearSelection(); // Clear boundary selection highlights
+      } else {
+        console.log('No boundary edges selected');
+      }
+    } else if (activeCommand === 'JOIN' && step === 1 && value === '') {
+      // Enter pressed - join selected lines/arcs
+      if (selectedIds.size >= 2) {
+        const selectedEntities = entities.filter(e => selectedIds.has(e.id));
+        const lines = selectedEntities.filter(e => e.type === 'LINE');
+
+        if (lines.length >= 2) {
+          captureBeforeState();
+
+          // Try to join lines that are connected end-to-end
+          const tolerance = 0.1;
+          const joined: Entity[] = [];
+          const used = new Set<number>();
+
+          // Find connected lines and join them
+          for (let i = 0; i < lines.length; i++) {
+            if (used.has(lines[i].id)) continue;
+
+            const chain: Entity[] = [lines[i]];
+            used.add(lines[i].id);
+            let currentEnd = (lines[i] as any).end;
+            let changed = true;
+
+            // Keep extending the chain
+            while (changed) {
+              changed = false;
+              for (let j = 0; j < lines.length; j++) {
+                if (used.has(lines[j].id)) continue;
+
+                const line = lines[j] as any;
+                const distToStart = Math.hypot(currentEnd[0] - line.start[0], currentEnd[1] - line.start[1]);
+                const distToEnd = Math.hypot(currentEnd[0] - line.end[0], currentEnd[1] - line.end[1]);
+
+                if (distToStart < tolerance) {
+                  chain.push(lines[j]);
+                  used.add(lines[j].id);
+                  currentEnd = line.end;
+                  changed = true;
+                  break;
+                } else if (distToEnd < tolerance) {
+                  // Reverse the line
+                  chain.push({
+                    ...lines[j],
+                    start: line.end,
+                    end: line.start,
+                  } as Entity);
+                  used.add(lines[j].id);
+                  currentEnd = line.start;
+                  changed = true;
+                  break;
+                }
+              }
+            }
+
+            if (chain.length > 1) {
+              // Create a polyline from the chain
+              const vertices: Point[] = [(chain[0] as any).start];
+              for (const line of chain) {
+                vertices.push((line as any).end);
+              }
+
+              joined.push({
+                type: 'LWPOLYLINE',
+                vertices,
+                closed: false,
+                color: chain[0].color,
+                layer: chain[0].layer,
+                id: Date.now() + Math.random(),
+              } as Entity);
+
+              // Delete original lines
+              chain.forEach(line => {
+                if (!used.has(-1)) { // Prevent duplicate deletion
+                  deleteEntities(new Set([line.id]));
+                }
+              });
+            }
+          }
+
+          // Add joined polylines
+          joined.forEach(ent => addEntity(ent));
+
+          if (joined.length > 0) {
+            createHistoryItem('JOIN' as CommandType);
+          }
+        }
+
+        cancelCommand();
+        clearSelection();
+      } else {
+        console.log('Select at least 2 objects to join');
+      }
+    } else if (activeCommand === 'HATCH' && step === 2 && value === '') {
+      // Enter pressed - finish hatch with selected islands
+      const { outerBoundary, islands, hatchParams } = commandState;
+
+      if (!outerBoundary) {
+        console.log('No outer boundary selected');
+        cancelCommand();
+        return;
+      }
+
+      captureBeforeState();
+
+      const hatchEntity: any = {
+        type: 'HATCH',
+        boundary: outerBoundary,
+        pattern: hatchParams.pattern || { name: 'ANSI31', type: 'predefined', angle: 45 },
+        scale: hatchParams.scale || 1.0,
+        rotation: hatchParams.rotation || 0,
+        color: hatchParams.color || outerBoundary.color,
+        layer: outerBoundary.layer,
+        id: Date.now() + Math.random(),
+      };
+
+      if (islands && islands.length > 0) {
+        hatchEntity.islands = islands;
+      }
+
+      addEntity(hatchEntity as Entity);
+      createHistoryItem('HATCH' as CommandType);
+
+      console.log(`Hatch created with ${islands?.length || 0} island(s)`);
+
+      // Reset to step 1 for another hatch
+      setStep(1);
+      setCommandState({});
+    } else if (activeCommand === 'BLOCK' && step === 1 && value === '') {
+      // Enter pressed - move to selecting base point
+      if (selectedIds.size > 0) {
+        setStep(2);
+      } else {
+        console.log('Select objects first for block');
+      }
+    } else if (activeCommand === 'ARRAY' && step === 1 && value === '') {
+      // Enter pressed - move to specifying array parameters
+      if (selectedIds.size > 0) {
+        setStep(2);
+      } else {
+        console.log('Select objects first');
+      }
+    } else if (activeCommand === 'ARRAY' && step === 2 && value.toUpperCase() === 'R') {
+      // Rectangular array - ask for rows, cols, spacing
+      setCommandState(prev => ({ ...prev, arrayType: 'RECTANGULAR', rows: 3, cols: 3, rowSpacing: 10, colSpacing: 10 }));
+      setStep(3);
+    } else if (activeCommand === 'ARRAY' && step === 2 && value.toUpperCase() === 'P') {
+      // Polar array - need center point
+      setCommandState(prev => ({ ...prev, arrayType: 'POLAR', items: 6, fillAngle: 360 }));
+      // Stay in step 2, wait for center point click
+    } else if (activeCommand === 'OFFSET' && step === 1) {
       const dist = parseFloat(value);
       if (!isNaN(dist) && dist > 0) {
         setCommandState({ distance: dist });
