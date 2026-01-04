@@ -2250,6 +2250,246 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         cancelCommand();
         clearSelection();
       }
+    } else if (activeCommand === 'FILLET') {
+      // Step 1: Select first line
+      // Step 2: Select second line
+      // Radius input via handleValueInput
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE') return; // Only lines for now
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const firstLine = entities.find(e => e.id === closestId);
+          if (firstLine) {
+            setCommandState({ firstLine, radius: commandState.radius || 5 });
+            setStep(2);
+          }
+        }
+      } else if (step === 2) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE') return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const secondLine = entities.find(e => e.id === closestId);
+          if (secondLine && commandState.firstLine) {
+            captureBeforeState();
+
+            const line1 = commandState.firstLine as any;
+            const line2 = secondLine as any;
+            const radius = commandState.radius || 5;
+
+            // Find intersection point
+            const dx1 = line1.end[0] - line1.start[0];
+            const dy1 = line1.end[1] - line1.start[1];
+            const dx2 = line2.end[0] - line2.start[0];
+            const dy2 = line2.end[1] - line2.start[1];
+
+            const denom = dx1 * dy2 - dy1 * dx2;
+            if (Math.abs(denom) > 0.001) {
+              const t = ((line2.start[0] - line1.start[0]) * dy2 - (line2.start[1] - line1.start[1]) * dx2) / denom;
+              const intersectionPoint: Point = [
+                line1.start[0] + t * dx1,
+                line1.start[1] + t * dy1,
+                0
+              ];
+
+              // Calculate perpendicular vectors
+              const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+              const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+              const dir1: Point = [dx1 / len1, dy1 / len1, 0];
+              const dir2: Point = [dx2 / len2, dy2 / len2, 0];
+
+              // Calculate fillet center
+              const angle = Math.acos(dir1[0] * dir2[0] + dir1[1] * dir2[1]);
+              const dist = radius / Math.tan(angle / 2);
+
+              const filletStart: Point = [
+                intersectionPoint[0] - dir1[0] * dist,
+                intersectionPoint[1] - dir1[1] * dist,
+                0
+              ];
+              const filletEnd: Point = [
+                intersectionPoint[0] - dir2[0] * dist,
+                intersectionPoint[1] - dir2[1] * dist,
+                0
+              ];
+
+              // Perpendicular direction for center
+              const perpDir1: Point = [-dir1[1], dir1[0], 0];
+              const perpDir2: Point = [-dir2[1], dir2[0], 0];
+
+              // Determine which side
+              const cross = dir1[0] * dir2[1] - dir1[1] * dir2[0];
+              const sign = cross > 0 ? 1 : -1;
+
+              const centerOffset: Point = [
+                (perpDir1[0] + perpDir2[0]) / 2,
+                (perpDir1[1] + perpDir2[1]) / 2,
+                0
+              ];
+              const centerOffsetLen = Math.sqrt(centerOffset[0] * centerOffset[0] + centerOffset[1] * centerOffset[1]);
+
+              const filletCenter: Point = [
+                (filletStart[0] + filletEnd[0]) / 2 + sign * (centerOffset[0] / centerOffsetLen) * radius,
+                (filletStart[1] + filletEnd[1]) / 2 + sign * (centerOffset[1] / centerOffsetLen) * radius,
+                0
+              ];
+
+              // Calculate arc angles
+              const startAngle = Math.atan2(filletStart[1] - filletCenter[1], filletStart[0] - filletCenter[0]);
+              const endAngle = Math.atan2(filletEnd[1] - filletCenter[1], filletEnd[0] - filletCenter[0]);
+
+              // Trim lines and add arc
+              updateEntity(line1.id, {
+                ...line1,
+                end: filletStart,
+              });
+              updateEntity(line2.id, {
+                ...line2,
+                end: filletEnd,
+              });
+
+              addEntity({
+                type: 'ARC',
+                center: filletCenter,
+                radius,
+                startAngle,
+                endAngle,
+                color: line1.color,
+                layer: line1.layer,
+                id: Date.now() + Math.random(),
+              } as Entity);
+
+              createHistoryItem('FILLET' as CommandType);
+            }
+
+            cancelCommand();
+          }
+        }
+      }
+    } else if (activeCommand === 'CHAMFER') {
+      // Step 1: Select first line
+      // Step 2: Select second line
+      // Distance input via handleValueInput
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE') return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const firstLine = entities.find(e => e.id === closestId);
+          if (firstLine) {
+            setCommandState({ firstLine, distance: commandState.distance || 5 });
+            setStep(2);
+          }
+        }
+      } else if (step === 2) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE') return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const secondLine = entities.find(e => e.id === closestId);
+          if (secondLine && commandState.firstLine) {
+            captureBeforeState();
+
+            const line1 = commandState.firstLine as any;
+            const line2 = secondLine as any;
+            const distance = commandState.distance || 5;
+
+            // Find intersection point
+            const dx1 = line1.end[0] - line1.start[0];
+            const dy1 = line1.end[1] - line1.start[1];
+            const dx2 = line2.end[0] - line2.start[0];
+            const dy2 = line2.end[1] - line2.start[1];
+
+            const denom = dx1 * dy2 - dy1 * dx2;
+            if (Math.abs(denom) > 0.001) {
+              const t = ((line2.start[0] - line1.start[0]) * dy2 - (line2.start[1] - line1.start[1]) * dx2) / denom;
+              const intersectionPoint: Point = [
+                line1.start[0] + t * dx1,
+                line1.start[1] + t * dy1,
+                0
+              ];
+
+              // Calculate direction vectors
+              const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+              const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+              const dir1: Point = [dx1 / len1, dy1 / len1, 0];
+              const dir2: Point = [dx2 / len2, dy2 / len2, 0];
+
+              // Chamfer points
+              const chamferStart: Point = [
+                intersectionPoint[0] - dir1[0] * distance,
+                intersectionPoint[1] - dir1[1] * distance,
+                0
+              ];
+              const chamferEnd: Point = [
+                intersectionPoint[0] - dir2[0] * distance,
+                intersectionPoint[1] - dir2[1] * distance,
+                0
+              ];
+
+              // Trim lines and add chamfer line
+              updateEntity(line1.id, {
+                ...line1,
+                end: chamferStart,
+              });
+              updateEntity(line2.id, {
+                ...line2,
+                end: chamferEnd,
+              });
+
+              addEntity({
+                type: 'LINE',
+                start: chamferStart,
+                end: chamferEnd,
+                color: line1.color,
+                layer: line1.layer,
+                id: Date.now() + Math.random(),
+              } as Entity);
+
+              createHistoryItem('CHAMFER' as CommandType);
+            }
+
+            cancelCommand();
+          }
+        }
+      }
     } else if (activeCommand === 'DIMLINEAR' || activeCommand === 'DIMALIGNED') {
       if (step === 1) {
         setTempPoints([point]);
