@@ -3266,6 +3266,269 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         });
         // Stay in command for multiple baselines
       }
+    } else if (activeCommand === 'BLOCK') {
+      // BLOCK: Define a block from selected entities
+      // Step 1: Select entities (multiple selection)
+      // Step 2: Select base point
+      // Step 3: Enter block name via text input
+      if (step === 1) {
+        // Select entities
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null && !selectedIds.has(closestId)) {
+          setSelectedIds(prev => new Set([...prev, closestId!]));
+        }
+      } else if (step === 2) {
+        // Base point selected
+        if (selectedIds.size === 0) {
+          console.log('No entities selected for block');
+          cancelCommand();
+          return;
+        }
+
+        setCommandState({ basePoint: point });
+        setTempPoints([point]);
+        setStep(3);
+
+        // Open text dialog for block name
+        setTextDialogState({
+          isOpen: true,
+          initialText: '',
+          onSubmit: (blockName: string) => {
+            if (!blockName || blockName.trim() === '') {
+              console.log('Block name cannot be empty');
+              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+              cancelCommand();
+              return;
+            }
+
+            const { basePoint } = commandState;
+            const selectedEntities = entities.filter(e => selectedIds.has(e.id));
+
+            // Store block definition in commandState or global blocks storage
+            // For simplicity, we'll just group entities and convert selection to a block reference
+            // In a full CAD app, blocks would be stored separately and referenced
+
+            captureBeforeState();
+
+            // Create a BLOCK_REFERENCE entity that contains the selected entities
+            const blockEntities = selectedEntities.map(ent => {
+              // Store relative to base point
+              let relativeEnt = { ...ent };
+
+              if (ent.type === 'LINE') {
+                (relativeEnt as any).start = translatePt((ent as any).start, -basePoint[0], -basePoint[1]);
+                (relativeEnt as any).end = translatePt((ent as any).end, -basePoint[0], -basePoint[1]);
+              } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+                (relativeEnt as any).center = translatePt((ent as any).center, -basePoint[0], -basePoint[1]);
+              } else if (ent.type === 'LWPOLYLINE') {
+                (relativeEnt as any).vertices = (ent as any).vertices.map((v: Point) =>
+                  translatePt(v, -basePoint[0], -basePoint[1])
+                );
+              } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+                (relativeEnt as any).position = translatePt((ent as any).position, -basePoint[0], -basePoint[1]);
+              }
+
+              return relativeEnt;
+            });
+
+            // Delete original entities
+            deleteEntities(selectedIds);
+
+            // Create block reference at base point
+            addEntity({
+              type: 'BLOCK_REFERENCE',
+              name: blockName,
+              position: basePoint,
+              rotation: 0,
+              scale: [1, 1, 1],
+              entities: blockEntities,
+              color: '#fff',
+              layer: '0',
+              id: Date.now() + Math.random(),
+            } as Entity);
+
+            createHistoryItem('BLOCK' as CommandType);
+            clearSelection();
+            cancelCommand();
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+          },
+          onCancel: () => {
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            cancelCommand();
+          }
+        });
+      }
+    } else if (activeCommand === 'INSERT') {
+      // INSERT: Insert a block at a point
+      // Step 1: Enter block name via text input (or select from list)
+      // Step 2: Select insertion point
+      if (step === 1) {
+        // Open text dialog for block name
+        setTextDialogState({
+          isOpen: true,
+          initialText: '',
+          onSubmit: (blockName: string) => {
+            if (!blockName || blockName.trim() === '') {
+              console.log('Block name cannot be empty');
+              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+              cancelCommand();
+              return;
+            }
+
+            // Find block definition
+            const blockDef = entities.find(e =>
+              e.type === 'BLOCK_REFERENCE' && (e as any).name === blockName
+            );
+
+            if (!blockDef) {
+              console.log(`Block "${blockName}" not found`);
+              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+              cancelCommand();
+              return;
+            }
+
+            setCommandState({ blockDefinition: blockDef, blockName });
+            setStep(2);
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+          },
+          onCancel: () => {
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            cancelCommand();
+          }
+        });
+      } else if (step === 2) {
+        // Insertion point selected
+        const { blockDefinition, blockName } = commandState;
+
+        if (!blockDefinition) {
+          console.log('No block definition');
+          cancelCommand();
+          return;
+        }
+
+        captureBeforeState();
+
+        // Insert block entities at insertion point
+        const blockEntities = (blockDefinition as any).entities || [];
+        const insertionPoint = point;
+
+        blockEntities.forEach((ent: any) => {
+          let newEnt = { ...ent, id: Date.now() + Math.random() };
+
+          if (ent.type === 'LINE') {
+            (newEnt as any).start = translatePt(ent.start, insertionPoint[0], insertionPoint[1]);
+            (newEnt as any).end = translatePt(ent.end, insertionPoint[0], insertionPoint[1]);
+          } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+            (newEnt as any).center = translatePt(ent.center, insertionPoint[0], insertionPoint[1]);
+          } else if (ent.type === 'LWPOLYLINE') {
+            (newEnt as any).vertices = ent.vertices.map((v: Point) =>
+              translatePt(v, insertionPoint[0], insertionPoint[1])
+            );
+          } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+            (newEnt as any).position = translatePt(ent.position, insertionPoint[0], insertionPoint[1]);
+          }
+
+          addEntity(newEnt as Entity);
+        });
+
+        createHistoryItem('INSERT' as CommandType);
+        // Stay in command for multiple inserts
+        setStep(2);
+      }
+    } else if (activeCommand === 'BOUNDARY') {
+      // BOUNDARY: Create a closed boundary polyline at a point
+      // Detects closed region at click point and creates LWPOLYLINE
+
+      // Simple implementation: Find all nearby closed polylines or circles
+      // and create a copy at the same location
+
+      let minD = Infinity;
+      let closestClosedEntity: Entity | null = null;
+      const SELECT_THRESHOLD = 5.0;
+
+      entities.forEach(ent => {
+        if (ent.visible === false) return;
+
+        // Check if entity forms a closed boundary
+        if (ent.type === 'LWPOLYLINE' && (ent as any).closed) {
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestClosedEntity = ent;
+          }
+        } else if (ent.type === 'CIRCLE') {
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestClosedEntity = ent;
+          }
+        } else if (ent.type === 'RECTANGLE') {
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestClosedEntity = ent;
+          }
+        }
+      });
+
+      if (closestClosedEntity) {
+        captureBeforeState();
+
+        let boundaryEntity: Entity | null = null;
+
+        if (closestClosedEntity.type === 'LWPOLYLINE') {
+          // Copy the polyline
+          boundaryEntity = {
+            ...closestClosedEntity,
+            id: Date.now() + Math.random(),
+            color: '#0ff', // Cyan for boundary
+            layer: '0',
+          };
+        } else if (closestClosedEntity.type === 'CIRCLE') {
+          // Convert circle to polyline with vertices
+          const center = (closestClosedEntity as any).center;
+          const radius = (closestClosedEntity as any).radius;
+          const segments = 36;
+          const vertices: Point[] = [];
+
+          for (let i = 0; i < segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            vertices.push([
+              center[0] + Math.cos(angle) * radius,
+              center[1] + Math.sin(angle) * radius,
+              0
+            ]);
+          }
+
+          boundaryEntity = {
+            type: 'LWPOLYLINE',
+            vertices,
+            closed: true,
+            color: '#0ff',
+            layer: '0',
+            id: Date.now() + Math.random(),
+          } as Entity;
+        }
+
+        if (boundaryEntity) {
+          addEntity(boundaryEntity);
+          createHistoryItem('BOUNDARY' as CommandType);
+        }
+
+        // Stay in command for multiple boundaries
+      } else {
+        console.log('No closed boundary found at point');
+      }
     }
   }, [
     activeCommand,
@@ -3392,6 +3655,13 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         clearSelection();
       } else {
         console.log('Select at least 2 objects to join');
+      }
+    } else if (activeCommand === 'BLOCK' && step === 1 && value === '') {
+      // Enter pressed - move to selecting base point
+      if (selectedIds.size > 0) {
+        setStep(2);
+      } else {
+        console.log('Select objects first for block');
       }
     } else if (activeCommand === 'ARRAY' && step === 1 && value === '') {
       // Enter pressed - move to specifying array parameters
