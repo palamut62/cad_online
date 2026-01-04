@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useRef, useMem
 import type { Entity, Point } from '../types/entities';
 import type { CommandType } from '../types/commands';
 import { closestPointOnEntity, rotatePoint as rotatePt, scalePoint as scalePt, translatePoint as translatePt, mirrorPoint as mirrorPt, getClosestSnapPoint, SnapPoint, GripPoint, distance2D, isEntityInBox, doesEntityIntersectBox } from '../utils/geometryUtils';
+import { trimLineEntity, trimArcEntity, trimCircleEntity, extendLineEntity, extendArcEntity } from '../utils/intersectionUtils';
 import { debounce } from '../utils/performance';
 import { HistoryManager } from '../utils/historyManager';
 import { calculateDimensionGeometry } from '../utils/dimensionUtils';
@@ -1878,6 +1879,377 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         }
         setStep(2); // Loop back for multiple offsets
       }
+    } else if (activeCommand === 'TRIM') {
+      // Step 1: Select cutting edges (can select multiple, press Enter to finish)
+      // Step 2: Select objects to trim
+      if (step === 1) {
+        // Selecting cutting edges
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          setSelectedIds(prev => new Set([...prev, closestId!]));
+          setCommandState(prev => ({
+            ...prev,
+            cuttingEdges: [...(prev.cuttingEdges || []), closestId]
+          }));
+        }
+      } else if (step === 2) {
+        // Trimming objects
+        const cuttingEdgeIds = commandState.cuttingEdges || [];
+        const cuttingEdges = entities.filter(e => cuttingEdgeIds.includes(e.id));
+
+        if (cuttingEdges.length === 0) {
+          console.log('No cutting edges selected');
+          return;
+        }
+
+        // Find entity to trim at click point
+        let minD = Infinity;
+        let targetEntity: Entity | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (cuttingEdgeIds.includes(ent.id)) return; // Skip cutting edges
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            targetEntity = ent;
+          }
+        });
+
+        if (targetEntity) {
+          captureBeforeState();
+          let newEntities: Entity[] = [];
+
+          if (targetEntity.type === 'LINE') {
+            newEntities = trimLineEntity(targetEntity, point, cuttingEdges);
+          } else if (targetEntity.type === 'ARC') {
+            newEntities = trimArcEntity(targetEntity, point, cuttingEdges);
+          } else if (targetEntity.type === 'CIRCLE') {
+            newEntities = trimCircleEntity(targetEntity, point, cuttingEdges);
+          }
+
+          // Delete original entity
+          deleteEntities(new Set([targetEntity.id]));
+
+          // Add new trimmed entities
+          newEntities.forEach(ent => addEntity(ent));
+
+          createHistoryItem('TRIM' as CommandType);
+        }
+        // Stay in step 2 for multiple trims
+      }
+    } else if (activeCommand === 'EXTEND') {
+      // Step 1: Select boundary edges (can select multiple, press Enter to finish)
+      // Step 2: Select objects to extend
+      if (step === 1) {
+        // Selecting boundary edges
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          setSelectedIds(prev => new Set([...prev, closestId!]));
+          setCommandState(prev => ({
+            ...prev,
+            boundaries: [...(prev.boundaries || []), closestId]
+          }));
+        }
+      } else if (step === 2) {
+        // Extending objects
+        const boundaryIds = commandState.boundaries || [];
+        const boundaries = entities.filter(e => boundaryIds.includes(e.id));
+
+        if (boundaries.length === 0) {
+          console.log('No boundary edges selected');
+          return;
+        }
+
+        // Find entity to extend at click point
+        let minD = Infinity;
+        let targetEntity: Entity | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (boundaryIds.includes(ent.id)) return; // Skip boundaries
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            targetEntity = ent;
+          }
+        });
+
+        if (targetEntity) {
+          captureBeforeState();
+          let extendedEntity: Entity | null = null;
+
+          if (targetEntity.type === 'LINE') {
+            extendedEntity = extendLineEntity(targetEntity, point, boundaries);
+          } else if (targetEntity.type === 'ARC') {
+            extendedEntity = extendArcEntity(targetEntity, point, boundaries);
+          }
+
+          if (extendedEntity && extendedEntity !== targetEntity) {
+            updateEntity(targetEntity.id, extendedEntity);
+            createHistoryItem('EXTEND' as CommandType);
+          }
+        }
+        // Stay in step 2 for multiple extends
+      }
+    } else if (activeCommand === 'BREAK') {
+      // Step 1: Select object to break
+      // Step 2: First break point
+      // Step 3: Second break point
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const targetEntity = entities.find(e => e.id === closestId);
+          if (targetEntity) {
+            setCommandState({ targetEntity, firstBreakPoint: point });
+            setTempPoints([point]);
+            setStep(2);
+          }
+        }
+      } else if (step === 2) {
+        const { targetEntity, firstBreakPoint } = commandState;
+        if (!targetEntity) return;
+
+        captureBeforeState();
+        const secondBreakPoint = point;
+
+        if (targetEntity.type === 'LINE') {
+          const line = targetEntity;
+          // Calculate t parameters for both points
+          const dx = line.end[0] - line.start[0];
+          const dy = line.end[1] - line.start[1];
+          const len = Math.sqrt(dx * dx + dy * dy);
+
+          if (len < 0.0001) return;
+
+          const t1 = ((firstBreakPoint[0] - line.start[0]) * dx + (firstBreakPoint[1] - line.start[1]) * dy) / (len * len);
+          const t2 = ((secondBreakPoint[0] - line.start[0]) * dx + (secondBreakPoint[1] - line.start[1]) * dy) / (len * len);
+
+          const tMin = Math.max(0, Math.min(t1, t2));
+          const tMax = Math.min(1, Math.max(t1, t2));
+
+          const breakPoint1: Point = [
+            line.start[0] + tMin * dx,
+            line.start[1] + tMin * dy,
+            0
+          ];
+          const breakPoint2: Point = [
+            line.start[0] + tMax * dx,
+            line.start[1] + tMax * dy,
+            0
+          ];
+
+          // Delete original line
+          deleteEntities(new Set([targetEntity.id]));
+
+          // Add two new line segments (if they exist)
+          if (tMin > 0.001) {
+            addEntity({
+              ...line,
+              id: Date.now() + Math.random(),
+              start: line.start,
+              end: breakPoint1,
+            });
+          }
+          if (tMax < 0.999) {
+            addEntity({
+              ...line,
+              id: Date.now() + Math.random() + 0.001,
+              start: breakPoint2,
+              end: line.end,
+            });
+          }
+
+          createHistoryItem('BREAK' as CommandType);
+        } else if (targetEntity.type === 'CIRCLE') {
+          const circle = targetEntity;
+          const angle1 = Math.atan2(firstBreakPoint[1] - circle.center[1], firstBreakPoint[0] - circle.center[0]);
+          const angle2 = Math.atan2(secondBreakPoint[1] - circle.center[1], secondBreakPoint[0] - circle.center[0]);
+
+          // Delete original circle
+          deleteEntities(new Set([targetEntity.id]));
+
+          // Create arc from the remaining portion
+          addEntity({
+            type: 'ARC',
+            center: circle.center,
+            radius: circle.radius,
+            startAngle: angle2,
+            endAngle: angle1,
+            color: circle.color,
+            layer: circle.layer,
+            id: Date.now() + Math.random(),
+          } as Entity);
+
+          createHistoryItem('BREAK' as CommandType);
+        } else if (targetEntity.type === 'ARC') {
+          const arc = targetEntity;
+
+          // Calculate angles for break points
+          const angle1 = Math.atan2(firstBreakPoint[1] - arc.center[1], firstBreakPoint[0] - arc.center[0]);
+          const angle2 = Math.atan2(secondBreakPoint[1] - arc.center[1], secondBreakPoint[0] - arc.center[0]);
+
+          // Normalize angles
+          const normalizeAngle = (a: number, ref: number) => {
+            let normalized = a;
+            while (normalized < ref) normalized += Math.PI * 2;
+            while (normalized > ref + Math.PI * 2) normalized -= Math.PI * 2;
+            return normalized;
+          };
+
+          const norm1 = normalizeAngle(angle1, arc.startAngle);
+          const norm2 = normalizeAngle(angle2, arc.startAngle);
+          const normEnd = normalizeAngle(arc.endAngle, arc.startAngle);
+
+          const angleMin = Math.min(norm1, norm2);
+          const angleMax = Math.max(norm1, norm2);
+
+          // Delete original arc
+          deleteEntities(new Set([targetEntity.id]));
+
+          // Add two arc segments (if they exist)
+          if (angleMin > arc.startAngle + 0.001) {
+            addEntity({
+              ...arc,
+              id: Date.now() + Math.random(),
+              startAngle: arc.startAngle,
+              endAngle: angleMin,
+            } as Entity);
+          }
+          if (angleMax < normEnd - 0.001) {
+            addEntity({
+              ...arc,
+              id: Date.now() + Math.random() + 0.001,
+              startAngle: angleMax,
+              endAngle: arc.endAngle,
+            } as Entity);
+          }
+
+          createHistoryItem('BREAK' as CommandType);
+        }
+
+        cancelCommand();
+      }
+    } else if (activeCommand === 'JOIN') {
+      // Step 1: Select multiple objects to join (press Enter when done)
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE' && ent.type !== 'ARC') return; // Only lines and arcs can be joined
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null && !selectedIds.has(closestId)) {
+          setSelectedIds(prev => new Set([...prev, closestId!]));
+        }
+      }
+    } else if (activeCommand === 'EXPLODE') {
+      // Select objects and explode them immediately
+      if (selectedIds.size === 0) {
+        // Select an object
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          setSelectedIds(new Set([closestId]));
+        }
+      } else {
+        // Explode selected objects
+        captureBeforeState();
+        const toDelete: number[] = [];
+        const toAdd: Entity[] = [];
+
+        selectedIds.forEach(id => {
+          const ent = entities.find(e => e.id === id);
+          if (!ent) return;
+
+          if (ent.type === 'LWPOLYLINE') {
+            // Explode polyline into lines
+            const vertices = (ent as any).vertices;
+            for (let i = 0; i < vertices.length - 1; i++) {
+              toAdd.push({
+                type: 'LINE',
+                start: vertices[i],
+                end: vertices[i + 1],
+                color: ent.color,
+                layer: ent.layer,
+                id: Date.now() + Math.random() + i * 0.001,
+              } as Entity);
+            }
+            if ((ent as any).closed && vertices.length > 2) {
+              toAdd.push({
+                type: 'LINE',
+                start: vertices[vertices.length - 1],
+                end: vertices[0],
+                color: ent.color,
+                layer: ent.layer,
+                id: Date.now() + Math.random() + vertices.length * 0.001,
+              } as Entity);
+            }
+            toDelete.push(id);
+          } else if (ent.type === 'RECTANGLE') {
+            // Explode rectangle into 4 lines (if RECTANGLE type exists separately)
+            // Currently rectangles are stored as LWPOLYLINE, so this may not be needed
+          }
+        });
+
+        // Delete original entities
+        deleteEntities(new Set(toDelete));
+
+        // Add exploded entities
+        toAdd.forEach(ent => addEntity(ent));
+
+        if (toAdd.length > 0) {
+          createHistoryItem('EXPLODE' as CommandType);
+        }
+
+        cancelCommand();
+        clearSelection();
+      }
     } else if (activeCommand === 'DIMLINEAR' || activeCommand === 'DIMALIGNED') {
       if (step === 1) {
         setTempPoints([point]);
@@ -2112,7 +2484,115 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
 
   // Handle value input (text input)
   const handleValueInput = useCallback((value: string) => {
-    if (activeCommand === 'OFFSET' && step === 1) {
+    if (activeCommand === 'TRIM' && step === 1 && value === '') {
+      // Enter pressed - move to trimming step
+      if (commandState.cuttingEdges && commandState.cuttingEdges.length > 0) {
+        setStep(2);
+        clearSelection(); // Clear cutting edge selection highlights
+      } else {
+        console.log('No cutting edges selected');
+      }
+    } else if (activeCommand === 'EXTEND' && step === 1 && value === '') {
+      // Enter pressed - move to extending step
+      if (commandState.boundaries && commandState.boundaries.length > 0) {
+        setStep(2);
+        clearSelection(); // Clear boundary selection highlights
+      } else {
+        console.log('No boundary edges selected');
+      }
+    } else if (activeCommand === 'JOIN' && step === 1 && value === '') {
+      // Enter pressed - join selected lines/arcs
+      if (selectedIds.size >= 2) {
+        const selectedEntities = entities.filter(e => selectedIds.has(e.id));
+        const lines = selectedEntities.filter(e => e.type === 'LINE');
+
+        if (lines.length >= 2) {
+          captureBeforeState();
+
+          // Try to join lines that are connected end-to-end
+          const tolerance = 0.1;
+          const joined: Entity[] = [];
+          const used = new Set<number>();
+
+          // Find connected lines and join them
+          for (let i = 0; i < lines.length; i++) {
+            if (used.has(lines[i].id)) continue;
+
+            const chain: Entity[] = [lines[i]];
+            used.add(lines[i].id);
+            let currentEnd = (lines[i] as any).end;
+            let changed = true;
+
+            // Keep extending the chain
+            while (changed) {
+              changed = false;
+              for (let j = 0; j < lines.length; j++) {
+                if (used.has(lines[j].id)) continue;
+
+                const line = lines[j] as any;
+                const distToStart = Math.hypot(currentEnd[0] - line.start[0], currentEnd[1] - line.start[1]);
+                const distToEnd = Math.hypot(currentEnd[0] - line.end[0], currentEnd[1] - line.end[1]);
+
+                if (distToStart < tolerance) {
+                  chain.push(lines[j]);
+                  used.add(lines[j].id);
+                  currentEnd = line.end;
+                  changed = true;
+                  break;
+                } else if (distToEnd < tolerance) {
+                  // Reverse the line
+                  chain.push({
+                    ...lines[j],
+                    start: line.end,
+                    end: line.start,
+                  } as Entity);
+                  used.add(lines[j].id);
+                  currentEnd = line.start;
+                  changed = true;
+                  break;
+                }
+              }
+            }
+
+            if (chain.length > 1) {
+              // Create a polyline from the chain
+              const vertices: Point[] = [(chain[0] as any).start];
+              for (const line of chain) {
+                vertices.push((line as any).end);
+              }
+
+              joined.push({
+                type: 'LWPOLYLINE',
+                vertices,
+                closed: false,
+                color: chain[0].color,
+                layer: chain[0].layer,
+                id: Date.now() + Math.random(),
+              } as Entity);
+
+              // Delete original lines
+              chain.forEach(line => {
+                if (!used.has(-1)) { // Prevent duplicate deletion
+                  deleteEntities(new Set([line.id]));
+                }
+              });
+            }
+          }
+
+          // Add joined polylines
+          joined.forEach(ent => addEntity(ent));
+
+          if (joined.length > 0) {
+            createHistoryItem('JOIN' as CommandType);
+          }
+        }
+
+        cancelCommand();
+        clearSelection();
+      } else {
+        console.log('Select at least 2 objects to join');
+      }
+    } else if (activeCommand === 'OFFSET' && step === 1) {
       const dist = parseFloat(value);
       if (!isNaN(dist) && dist > 0) {
         setCommandState({ distance: dist });
