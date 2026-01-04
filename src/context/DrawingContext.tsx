@@ -1873,6 +1873,85 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             if (newRadius > 0) {
               newEnt = { ...ent, id: Date.now() + Math.random(), radius: newRadius } as Entity;
             }
+          } else if (ent.type === 'LWPOLYLINE') {
+            // Offset polyline - simplified version (offset all vertices perpendicular)
+            const vertices = (ent as any).vertices;
+            const newVertices: Point[] = [];
+
+            // Calculate which side to offset based on click point
+            // Use first segment for direction determination
+            if (vertices.length >= 2) {
+              const dx = vertices[1][0] - vertices[0][0];
+              const dy = vertices[1][1] - vertices[0][1];
+              const len = Math.hypot(dx, dy);
+              const nx = -dy / len;
+              const ny = dx / len;
+
+              const vx = point[0] - vertices[0][0];
+              const vy = point[1] - vertices[0][1];
+              const dot = vx * nx + vy * ny;
+              const sign = dot > 0 ? 1 : -1;
+
+              // Offset each vertex
+              for (let i = 0; i < vertices.length; i++) {
+                const v = vertices[i];
+
+                // Calculate perpendicular direction for this vertex
+                let perpX = 0, perpY = 0;
+
+                if (i === 0 && !((ent as any).closed)) {
+                  // First vertex (if not closed)
+                  const dx = vertices[1][0] - v[0];
+                  const dy = vertices[1][1] - v[1];
+                  const len = Math.hypot(dx, dy);
+                  perpX = -dy / len;
+                  perpY = dx / len;
+                } else if (i === vertices.length - 1 && !((ent as any).closed)) {
+                  // Last vertex (if not closed)
+                  const dx = v[0] - vertices[i - 1][0];
+                  const dy = v[1] - vertices[i - 1][1];
+                  const len = Math.hypot(dx, dy);
+                  perpX = -dy / len;
+                  perpY = dx / len;
+                } else {
+                  // Middle vertex - average of adjacent segments
+                  const prevIdx = i === 0 ? vertices.length - 1 : i - 1;
+                  const nextIdx = i === vertices.length - 1 ? 0 : i + 1;
+
+                  const dx1 = v[0] - vertices[prevIdx][0];
+                  const dy1 = v[1] - vertices[prevIdx][1];
+                  const len1 = Math.hypot(dx1, dy1);
+                  const perp1X = -dy1 / len1;
+                  const perp1Y = dx1 / len1;
+
+                  const dx2 = vertices[nextIdx][0] - v[0];
+                  const dy2 = vertices[nextIdx][1] - v[1];
+                  const len2 = Math.hypot(dx2, dy2);
+                  const perp2X = -dy2 / len2;
+                  const perp2Y = dx2 / len2;
+
+                  perpX = (perp1X + perp2X) / 2;
+                  perpY = (perp1Y + perp2Y) / 2;
+                  const perpLen = Math.hypot(perpX, perpY);
+                  if (perpLen > 0.001) {
+                    perpX /= perpLen;
+                    perpY /= perpLen;
+                  }
+                }
+
+                newVertices.push([
+                  v[0] + perpX * sign * distance,
+                  v[1] + perpY * sign * distance,
+                  v[2]
+                ]);
+              }
+
+              newEnt = {
+                ...ent,
+                id: Date.now() + Math.random(),
+                vertices: newVertices
+              } as Entity;
+            }
           }
 
           if (newEnt) addEntity(newEnt);
@@ -2490,6 +2569,122 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           }
         }
       }
+    } else if (activeCommand === 'ARRAY') {
+      // Step 1: Select objects to array
+      // Step 2: Specify array type (R=Rectangular, P=Polar) via handleValueInput
+      // Step 3: Specify parameters and execute
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null && !selectedIds.has(closestId)) {
+          setSelectedIds(prev => new Set([...prev, closestId!]));
+        }
+      } else if (step === 2) {
+        // Center point for polar array
+        setCommandState(prev => ({ ...prev, centerPoint: point }));
+        setStep(3);
+      } else if (step === 3) {
+        // Execute array after parameters are set
+        const arrayType = commandState.arrayType || 'RECTANGULAR';
+        if (selectedIds.size === 0) return;
+
+        captureBeforeState();
+        const selectedEntities = entities.filter(e => selectedIds.has(e.id));
+
+        if (arrayType === 'RECTANGULAR') {
+          const rows = commandState.rows || 3;
+          const cols = commandState.cols || 3;
+          const rowSpacing = commandState.rowSpacing || 10;
+          const colSpacing = commandState.colSpacing || 10;
+
+          for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+              if (row === 0 && col === 0) continue; // Skip original
+
+              const dx = col * colSpacing;
+              const dy = -row * rowSpacing;
+
+              selectedEntities.forEach(ent => {
+                let newEnt = { ...ent, id: Date.now() + Math.random() + row * 100 + col };
+
+                if (ent.type === 'LINE') {
+                  (newEnt as any).start = translatePt((ent as any).start, dx, dy);
+                  (newEnt as any).end = translatePt((ent as any).end, dx, dy);
+                } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+                  (newEnt as any).center = translatePt((ent as any).center, dx, dy);
+                } else if (ent.type === 'LWPOLYLINE') {
+                  (newEnt as any).vertices = (ent as any).vertices.map((v: Point) => translatePt(v, dx, dy));
+                } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+                  (newEnt as any).position = translatePt((ent as any).position, dx, dy);
+                } else if (ent.type === 'RAY' || ent.type === 'XLINE') {
+                  (newEnt as any).origin = translatePt((ent as any).origin, dx, dy);
+                }
+
+                addEntity(newEnt as Entity);
+              });
+            }
+          }
+        } else if (arrayType === 'POLAR') {
+          const items = commandState.items || 6;
+          const centerPoint = commandState.centerPoint || [0, 0, 0] as Point;
+          const fillAngle = commandState.fillAngle || 360;
+          const angleStep = (fillAngle * Math.PI / 180) / items;
+
+          for (let i = 1; i < items; i++) {
+            const angle = angleStep * i;
+
+            selectedEntities.forEach(ent => {
+              let newEnt = { ...ent, id: Date.now() + Math.random() + i * 1000 };
+
+              if (ent.type === 'LINE') {
+                (newEnt as any).start = rotatePt((ent as any).start, centerPoint, angle);
+                (newEnt as any).end = rotatePt((ent as any).end, centerPoint, angle);
+              } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+                (newEnt as any).center = rotatePt((ent as any).center, centerPoint, angle);
+                if (ent.type === 'ARC') {
+                  (newEnt as any).startAngle = (ent as any).startAngle + angle;
+                  (newEnt as any).endAngle = (ent as any).endAngle + angle;
+                } else if (ent.type === 'ELLIPSE') {
+                  (newEnt as any).rotation = ((ent as any).rotation || 0) + angle;
+                }
+              } else if (ent.type === 'LWPOLYLINE') {
+                (newEnt as any).vertices = (ent as any).vertices.map((v: Point) => rotatePt(v, centerPoint, angle));
+              } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+                (newEnt as any).position = rotatePt((ent as any).position, centerPoint, angle);
+                if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+                  (newEnt as any).rotation = ((ent as any).rotation || 0) + angle;
+                }
+              } else if (ent.type === 'RAY' || ent.type === 'XLINE') {
+                (newEnt as any).origin = rotatePt((ent as any).origin, centerPoint, angle);
+                // Rotate direction vector
+                const dir = (ent as any).direction;
+                const cosA = Math.cos(angle);
+                const sinA = Math.sin(angle);
+                (newEnt as any).direction = [
+                  dir[0] * cosA - dir[1] * sinA,
+                  dir[0] * sinA + dir[1] * cosA,
+                  0
+                ];
+              }
+
+              addEntity(newEnt as Entity);
+            });
+          }
+        }
+
+        createHistoryItem('ARRAY' as CommandType);
+        cancelCommand();
+        clearSelection();
+      }
     } else if (activeCommand === 'DIMLINEAR' || activeCommand === 'DIMALIGNED') {
       if (step === 1) {
         setTempPoints([point]);
@@ -2832,6 +3027,21 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       } else {
         console.log('Select at least 2 objects to join');
       }
+    } else if (activeCommand === 'ARRAY' && step === 1 && value === '') {
+      // Enter pressed - move to specifying array parameters
+      if (selectedIds.size > 0) {
+        setStep(2);
+      } else {
+        console.log('Select objects first');
+      }
+    } else if (activeCommand === 'ARRAY' && step === 2 && value.toUpperCase() === 'R') {
+      // Rectangular array - ask for rows, cols, spacing
+      setCommandState(prev => ({ ...prev, arrayType: 'RECTANGULAR', rows: 3, cols: 3, rowSpacing: 10, colSpacing: 10 }));
+      setStep(3);
+    } else if (activeCommand === 'ARRAY' && step === 2 && value.toUpperCase() === 'P') {
+      // Polar array - need center point
+      setCommandState(prev => ({ ...prev, arrayType: 'POLAR', items: 6, fillAngle: 360 }));
+      // Stay in step 2, wait for center point click
     } else if (activeCommand === 'OFFSET' && step === 1) {
       const dist = parseFloat(value);
       if (!isNaN(dist) && dist > 0) {
