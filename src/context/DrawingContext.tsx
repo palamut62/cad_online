@@ -2685,6 +2685,150 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         cancelCommand();
         clearSelection();
       }
+    } else if (activeCommand === 'STRETCH') {
+      // STRETCH: Crossing window selection, then base point and displacement
+      // Step 1: First corner of crossing window
+      // Step 2: Second corner of crossing window (select entities)
+      // Step 3: Base point
+      // Step 4: Displacement point (execute stretch)
+      if (step === 1) {
+        setTempPoints([point]);
+        setStep(2);
+      } else if (step === 2) {
+        const corner1 = tempPoints[0];
+        const corner2 = point;
+
+        // Create crossing window box
+        const minX = Math.min(corner1[0], corner2[0]);
+        const maxX = Math.max(corner1[0], corner2[0]);
+        const minY = Math.min(corner1[1], corner2[1]);
+        const maxY = Math.max(corner1[1], corner2[1]);
+
+        // Find entities to stretch
+        const toMove: number[] = []; // Completely inside - will move
+        const toStretch: number[] = []; // Crossing window - will stretch
+
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+
+          const isInside = isEntityInBox(ent, minX, minY, maxX, maxY);
+          const isCrossing = doesEntityIntersectBox(ent, minX, minY, maxX, maxY);
+
+          if (isInside) {
+            toMove.push(ent.id);
+          } else if (isCrossing) {
+            toStretch.push(ent.id);
+          }
+        });
+
+        setCommandState({
+          corner1,
+          corner2,
+          minX,
+          maxX,
+          minY,
+          maxY,
+          toMove,
+          toStretch
+        });
+        setTempPoints([point]);
+        setStep(3);
+      } else if (step === 3) {
+        // Base point
+        setTempPoints([point]);
+        setCommandState(prev => ({ ...prev, basePoint: point }));
+        setStep(4);
+      } else if (step === 4) {
+        // Displacement point - execute stretch
+        const { basePoint, toMove, toStretch, minX, maxX, minY, maxY } = commandState;
+        const dx = point[0] - basePoint[0];
+        const dy = point[1] - basePoint[1];
+
+        if (toMove.length === 0 && toStretch.length === 0) {
+          cancelCommand();
+          return;
+        }
+
+        captureBeforeState();
+
+        // Move entities completely inside
+        toMove.forEach((id: number) => {
+          const ent = entities.find(e => e.id === id);
+          if (!ent) return;
+
+          if (ent.type === 'LINE') {
+            updateEntity(id, {
+              start: translatePt((ent as any).start, dx, dy),
+              end: translatePt((ent as any).end, dx, dy),
+            });
+          } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+            updateEntity(id, {
+              center: translatePt((ent as any).center, dx, dy),
+            });
+          } else if (ent.type === 'LWPOLYLINE') {
+            updateEntity(id, {
+              vertices: (ent as any).vertices.map((v: Point) => translatePt(v, dx, dy)),
+            });
+          } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+            updateEntity(id, {
+              position: translatePt((ent as any).position, dx, dy),
+            });
+          } else if (ent.type === 'RAY' || ent.type === 'XLINE') {
+            updateEntity(id, {
+              origin: translatePt((ent as any).origin, dx, dy),
+            });
+          }
+        });
+
+        // Stretch entities crossing the window
+        toStretch.forEach((id: number) => {
+          const ent = entities.find(e => e.id === id);
+          if (!ent) return;
+
+          if (ent.type === 'LINE') {
+            const start = (ent as any).start;
+            const end = (ent as any).end;
+
+            // Check which endpoints are inside the box
+            const startInside = start[0] >= minX && start[0] <= maxX &&
+                               start[1] >= minY && start[1] <= maxY;
+            const endInside = end[0] >= minX && end[0] <= maxX &&
+                             end[1] >= minY && end[1] <= maxY;
+
+            updateEntity(id, {
+              start: startInside ? translatePt(start, dx, dy) : start,
+              end: endInside ? translatePt(end, dx, dy) : end,
+            });
+          } else if (ent.type === 'LWPOLYLINE') {
+            const vertices = (ent as any).vertices;
+            const newVertices = vertices.map((v: Point) => {
+              const vInside = v[0] >= minX && v[0] <= maxX &&
+                            v[1] >= minY && v[1] <= maxY;
+              return vInside ? translatePt(v, dx, dy) : v;
+            });
+
+            updateEntity(id, {
+              vertices: newVertices,
+            });
+          } else if (ent.type === 'ARC') {
+            // For arcs, if center is inside, move the whole arc
+            const center = (ent as any).center;
+            const centerInside = center[0] >= minX && center[0] <= maxX &&
+                                center[1] >= minY && center[1] <= maxY;
+
+            if (centerInside) {
+              updateEntity(id, {
+                center: translatePt(center, dx, dy),
+              });
+            }
+          }
+        });
+
+        createHistoryItem('STRETCH' as CommandType);
+        cancelCommand();
+        setCommandState({});
+        setTempPoints([]);
+      }
     } else if (activeCommand === 'DIMLINEAR' || activeCommand === 'DIMALIGNED') {
       if (step === 1) {
         setTempPoints([point]);
@@ -2901,6 +3045,227 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           cancelCommand();
         }
       }
+    } else if (activeCommand === 'LEADER') {
+      // LEADER: Arrow with text annotation
+      // Step 1: Arrow start point
+      // Step 2: Arrow end point (tip)
+      // Step 3: Text position
+      // Step 4: Text input via dialog or prompt
+      if (step === 1) {
+        setTempPoints([point]);
+        setStep(2);
+      } else if (step === 2) {
+        setTempPoints(prev => [...prev, point]);
+        setStep(3);
+      } else if (step === 3) {
+        // Text position selected, now wait for text input
+        setTempPoints(prev => [...prev, point]);
+        setStep(4);
+
+        // Open text dialog for leader text
+        setTextDialogState({
+          isOpen: true,
+          initialText: '',
+          onSubmit: (text: string) => {
+            const startPoint = tempPoints[0];
+            const arrowTip = tempPoints[1];
+            const textPosition = point;
+
+            captureBeforeState();
+
+            // Create leader line from start to arrow tip
+            addEntity({
+              type: 'LINE',
+              start: startPoint,
+              end: arrowTip,
+              color: '#fff',
+              layer: '0',
+              id: Date.now() + Math.random(),
+            } as Entity);
+
+            // Create arrow head at tip
+            const dx = arrowTip[0] - startPoint[0];
+            const dy = arrowTip[1] - startPoint[1];
+            const angle = Math.atan2(dy, dx);
+            const arrowSize = 3;
+            const arrowAngle = Math.PI / 6; // 30 degrees
+
+            const arrow1: Point = [
+              arrowTip[0] - arrowSize * Math.cos(angle - arrowAngle),
+              arrowTip[1] - arrowSize * Math.sin(angle - arrowAngle),
+              0
+            ];
+            const arrow2: Point = [
+              arrowTip[0] - arrowSize * Math.cos(angle + arrowAngle),
+              arrowTip[1] - arrowSize * Math.sin(angle + arrowAngle),
+              0
+            ];
+
+            // Create arrow as filled triangle
+            addEntity({
+              type: 'LWPOLYLINE',
+              vertices: [arrowTip, arrow1, arrow2],
+              closed: true,
+              color: '#fff',
+              layer: '0',
+              id: Date.now() + Math.random() + 1,
+            } as Entity);
+
+            // Create horizontal line from arrow tip to text
+            const horizontalLineEnd: Point = [textPosition[0], arrowTip[1], 0];
+            addEntity({
+              type: 'LINE',
+              start: arrowTip,
+              end: horizontalLineEnd,
+              color: '#fff',
+              layer: '0',
+              id: Date.now() + Math.random() + 2,
+            } as Entity);
+
+            // Create text at text position
+            if (text && text.trim() !== '') {
+              addEntity({
+                type: 'TEXT',
+                position: textPosition,
+                text: text,
+                height: 2.5,
+                rotation: 0,
+                color: '#fff',
+                layer: '0',
+                id: Date.now() + Math.random() + 3,
+              } as Entity);
+            }
+
+            createHistoryItem('LEADER' as CommandType);
+            cancelCommand();
+            setTempPoints([]);
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+          },
+          onCancel: () => {
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            cancelCommand();
+          }
+        });
+      }
+    } else if (activeCommand === 'DIMCONTINUE') {
+      // DIMCONTINUE: Continue dimensioning from last dimension
+      // Step 1: Find last DIMLINEAR or DIMALIGNED dimension
+      // Step 2: Click next point to continue dimension
+      if (step === 1) {
+        // Find the most recent linear or aligned dimension
+        const lastDim = [...entities]
+          .reverse()
+          .find(e => e.type === 'DIMENSION' && (
+            (e as any).dimType === 'DIMLINEAR' ||
+            (e as any).dimType === 'DIMALIGNED'
+          ));
+
+        if (lastDim) {
+          setCommandState({
+            lastDimension: lastDim,
+            basePoint: (lastDim as any).end,
+            dimLinePosition: (lastDim as any).dimLinePosition
+          });
+          setTempPoints([(lastDim as any).end]);
+          setStep(2);
+        } else {
+          console.log('No previous linear or aligned dimension found');
+          cancelCommand();
+        }
+      } else if (step === 2) {
+        // Create new dimension continuing from last
+        const { lastDimension, basePoint, dimLinePosition } = commandState;
+        const type = (lastDimension as any).dimType === 'DIMLINEAR' ? 'linear' : 'aligned';
+
+        const geometry = calculateDimensionGeometry(basePoint, point, dimLinePosition, type);
+
+        addEntity({
+          type: 'DIMENSION',
+          dimType: (lastDimension as any).dimType,
+          start: basePoint,
+          end: point,
+          dimLinePosition: dimLinePosition,
+          textHeight: 2.5,
+          rotation: geometry.rotation,
+          color: '#ffffff',
+          layer: '0'
+        });
+
+        createHistoryItem('DIMCONTINUE' as CommandType);
+
+        // Update for next continue
+        setCommandState({
+          lastDimension: lastDimension,
+          basePoint: point,
+          dimLinePosition: dimLinePosition
+        });
+        setTempPoints([point]);
+        // Stay in command for multiple continues
+      }
+    } else if (activeCommand === 'DIMBASELINE') {
+      // DIMBASELINE: Create multiple dimensions from same baseline
+      // Step 1: Find last DIMLINEAR or DIMALIGNED dimension (use as baseline)
+      // Step 2-N: Click points to create dimensions from baseline
+      if (step === 1) {
+        // Find the most recent linear or aligned dimension
+        const lastDim = [...entities]
+          .reverse()
+          .find(e => e.type === 'DIMENSION' && (
+            (e as any).dimType === 'DIMLINEAR' ||
+            (e as any).dimType === 'DIMALIGNED'
+          ));
+
+        if (lastDim) {
+          setCommandState({
+            baselineDimension: lastDim,
+            basePoint: (lastDim as any).start,
+            dimLinePosition: (lastDim as any).dimLinePosition,
+            offsetMultiplier: 1
+          });
+          setTempPoints([(lastDim as any).start]);
+          setStep(2);
+        } else {
+          console.log('No previous linear or aligned dimension found');
+          cancelCommand();
+        }
+      } else if (step === 2) {
+        // Create new dimension from baseline
+        const { baselineDimension, basePoint, dimLinePosition, offsetMultiplier } = commandState;
+        const type = (baselineDimension as any).dimType === 'DIMLINEAR' ? 'linear' : 'aligned';
+
+        // Offset each baseline dimension by a fixed amount
+        const offset = 10; // Standard offset between baseline dimensions
+        const newDimLinePosition: Point = [
+          dimLinePosition[0],
+          dimLinePosition[1] - (offset * offsetMultiplier),
+          0
+        ];
+
+        const geometry = calculateDimensionGeometry(basePoint, point, newDimLinePosition, type);
+
+        addEntity({
+          type: 'DIMENSION',
+          dimType: (baselineDimension as any).dimType,
+          start: basePoint,
+          end: point,
+          dimLinePosition: newDimLinePosition,
+          textHeight: 2.5,
+          rotation: geometry.rotation,
+          color: '#ffffff',
+          layer: '0'
+        });
+
+        createHistoryItem('DIMBASELINE' as CommandType);
+
+        // Increment offset for next baseline dimension
+        setCommandState({
+          baselineDimension: baselineDimension,
+          basePoint: basePoint,
+          dimLinePosition: dimLinePosition,
+          offsetMultiplier: offsetMultiplier + 1
+        });
+        // Stay in command for multiple baselines
+      }
     }
   }, [
     activeCommand,
@@ -2915,6 +3280,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     cancelCommand,
     toggleSelection,
     clearSelection,
+    setTextDialogState,
   ]);
 
   // Handle value input (text input)
