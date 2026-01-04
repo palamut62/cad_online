@@ -1,0 +1,41 @@
+.command-line-container {
+    background-color: var(--cmd-line-bg);
+    color: var(--cmd-line-text);
+    border-top: 1px solid var(--border-color);
+    padding: 5px;
+    height: 80px;
+    display: flex;
+    flex-direction: column;
+    font-family: monospace;
+    font-size: 13px;
+}
+
+.command-history {
+    flex: 1;
+    overflow-y: auto;
+    color: #888;
+    margin-bottom: 2px;
+}
+
+.history-line {
+    padding: 1px 0;
+}
+
+.command-input-area {
+    display: flex;
+    align-items: center;
+}
+
+.prompt-label {
+    margin-right: 5px;
+    color: var(--text-main);
+}
+
+.command-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    outline: none;
+    font-family: inherit;
+}

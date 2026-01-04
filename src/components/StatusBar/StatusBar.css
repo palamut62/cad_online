@@ -1,0 +1,31 @@
+.status-bar {
+    height: 24px;
+    background-color: var(--footer-bg);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px;
+    color: #fff;
+    font-size: 11px;
+    font-family: monospace;
+}
+
+.status-left span,
+.status-right span {
+    margin-right: 15px;
+    cursor: pointer;
+}
+
+.status-left span:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.active-cmd {
+    background-color: #0078d4;
+    padding: 2px 6px;
+    border-radius: 2px;
+}
+
+.selection-count {
+    color: #ffcc00;
+}

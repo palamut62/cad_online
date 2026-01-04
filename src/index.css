@@ -1,0 +1,52 @@
+:root {
+  --bg-color: #2b2b2b;
+  --header-bg: #1c1c1c;
+  --viewport-bg: #212223;
+  --text-main: #f0f0f0;
+  --text-dim: #a0a0a0;
+  --accent-blue: #0078d4;
+  --border-color: #3f3f3f;
+  --ribbon-bg: #2b2b2b;
+  --panel-bg: #333333;
+  --footer-bg: #0078d4; 
+  --cmd-line-bg: #1e1e1e;
+  --cmd-line-text: #cccccc;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
+  user-select: none; /* Prevent selection while drawing */
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-color);
+}
+::-webkit-scrollbar-thumb {
+  background: #555;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #777;
+}
+
+/* Utility classes */
+.flex-row { display: flex; flex-direction: row; }
+.flex-col { display: flex; flex-direction: column; }
+.flex-1 { flex: 1; }
+.absolute-fill { position: absolute; top:0; left:0; right:0; bottom:0; }
