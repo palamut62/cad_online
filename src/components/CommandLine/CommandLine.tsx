@@ -9,7 +9,7 @@ const CommandLine = () => {
     const [input, setInput] = useState('');
     const [aiInput, setAiInput] = useState('');
     const { startCommand, activeCommand, step, handleValueInput } = useDrawing();
-    const { generateCADCommands, isLoading: isAILoading, error: aiError, selectedModel, apiKey } = useAI();
+    const { generateCADCommands, isLoading: isAILoading, error: aiError, selectedModel, apiKey, clearError } = useAI();
 
     // Dragging state
     const [position, setPosition] = useState<{ x: number, y: number } | null>(null);
@@ -198,7 +198,27 @@ const CommandLine = () => {
             >
                 <span className="material-icons">drag_indicator</span>
             </div>
-            <div className="command-line-content">
+            <div className="command-line-content" style={{ position: 'relative' }}>
+                <div
+                    className="refresh-btn"
+                    onClick={() => {
+                        setHistory(['Type a command (LINE, CIRCLE, PLINE, RECT, POLYGON, MOVE, COPY, ...)']);
+                        setInput('');
+                        setAiInput('');
+                        clearError();
+                    }}
+                    style={{
+                        position: 'absolute',
+                        top: '4px',
+                        right: '4px',
+                        cursor: 'pointer',
+                        color: '#666',
+                        zIndex: 10
+                    }}
+                    title="Reset Terminal"
+                >
+                    <span className="material-icons" style={{ fontSize: '14px' }}>refresh</span>
+                </div>
                 <div className="command-history">
                     {history.slice(-4).map((line, i) => (
                         <div key={i} className="history-line">{line}</div>
@@ -217,7 +237,7 @@ const CommandLine = () => {
                         className="command-input"
                         autoFocus
                         placeholder="Type a command..."
-                        style={{ color: '#4cc2ff' }}
+                        style={{ caretColor: '#4cc2ff', color: '#999', fontSize: '11px' }}
                     />
                 </form>
 
@@ -231,7 +251,7 @@ const CommandLine = () => {
                             onChange={(e) => setAiInput(e.target.value)}
                             className="command-input"
                             placeholder="Doğal dil ile çizim yapın..."
-                            style={{ color: '#4cc2ff' }}
+                            style={{ caretColor: '#4cc2ff', color: '#999', fontSize: '11px' }}
                         />
                         <div style={{ marginLeft: '10px', paddingRight: '10px', fontSize: '10px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: '100px', opacity: 0.4 }}>
                             {apiKey ? (

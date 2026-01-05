@@ -60,25 +60,26 @@ export class OpenRouterService {
     async generateCompletion(prompt: string, model: string, systemPrompt?: string): Promise<any> {
         if (!this.apiKey) throw new Error('API Key is missing');
 
-        const finalSystemPrompt = systemPrompt || `You are an expert CAD assistant.
-Your goal is to interpret natural language requests and convert them into a JSON structure that represents CAD entities.
-Output ONLY valid JSON. Do not include markdown formatting like \`\`\`json.
+        const finalSystemPrompt = systemPrompt || `You are an expert AutoCAD entity generator.
+Your ONLY task is to return a valid JSON object containing CAD entities based on the user's request.
+DO NOT provide any explanations, apologies, or conversational text.
+OUTPUT ONLY RAW JSON. No markdown blocks, no 'Here is the JSON', nothing else.
 
 Supported Entity Types and structures:
 1. LINE: { "type": "LINE", "start": [x, y, z], "end": [x, y, z], "layer": "0", "color": "BYLAYER" }
 2. CIRCLE: { "type": "CIRCLE", "center": [x, y, z], "radius": number, "layer": "0", "color": "BYLAYER" }
-3. RECTANGLE: { "type": "LWPOLYLINE", "vertices": [[x,y], [x,y], [x,y], [x,y]], "closed": true, "layer": "0" } -> Generate 4 corners
+3. RECTANGLE: { "type": "LWPOLYLINE", "vertices": [[x, y], [x, y], [x, y], [x, y]], "closed": true, "layer": "0" } -> Generate 4 corners
 4. TEXT: { "type": "TEXT", "position": [x, y, z], "text": "string", "height": 10, "layer": "0" }
 5. DIMENSION: { "type": "DIMENSION", "start": [x, y, z], "end": [x, y, z], "textPoint": [x, y, z] }
 
 Example Response for "Draw a line from 0,0 to 100,100":
 {
-  "entities": [
-    { "type": "LINE", "start": [0, 0, 0], "end": [100, 100, 0] }
-  ]
+    "entities": [
+        { "type": "LINE", "start": [0, 0, 0], "end": [100, 100, 0] }
+    ]
 }
 
-If the user asks for a complex shape (like a room or title block), break it down into these primitives.
+If the user asks for a complex shape(like a room or title block), break it down into these primitives.
 Coordinate system: X is right, Y is up.
 `;
 
@@ -95,7 +96,7 @@ Coordinate system: X is right, Y is up.
             const response = await fetch(`${BASE_URL}/chat/completions`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Authorization': `Bearer ${this.apiKey} `,
                     'HTTP-Referer': 'http://localhost:3000', // Update with actual domain if deployed
                     'X-Title': 'CAD Online AI',
                     'Content-Type': 'application/json',
@@ -117,7 +118,14 @@ Coordinate system: X is right, Y is up.
             // Remove markdown format if present
             const cleanContent = content.replace(/```json/g, '').replace(/```/g, '').trim();
 
-            return JSON.parse(cleanContent);
+            try {
+                return JSON.parse(cleanContent);
+            } catch (e) {
+                // If parsing fails, it might be a refusal or explanation.
+                // We throw it as a specific error that the UI can catch and display.
+                console.warn("AI returned non-JSON content:", cleanContent);
+                throw new Error(cleanContent);
+            }
 
         } catch (error) {
             console.error('Error generating completion:', error);

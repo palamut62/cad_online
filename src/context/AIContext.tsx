@@ -132,6 +132,8 @@ export const AIProvider: React.FC<AIProviderProps> = ({ children }) => {
         }
     };
 
+    const clearError = () => setError(null);
+
     const value: AIContextState = {
         apiKey,
         setApiKey,
@@ -144,7 +146,8 @@ export const AIProvider: React.FC<AIProviderProps> = ({ children }) => {
         error,
         availableModels,
         refreshModels,
-        testModel
+        testModel,
+        clearError
     };
 
     return (

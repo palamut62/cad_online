@@ -56,4 +56,5 @@ export interface AIContextState {
     availableModels: OpenRouterModel[];
     refreshModels: (keyOverride?: string) => Promise<void>;
     testModel: (key?: string, model?: string) => Promise<{ success: boolean; message: string }>;
+    clearError: () => void;
 }
