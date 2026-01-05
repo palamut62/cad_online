@@ -426,6 +426,56 @@ const ZoomWindowBoxRenderer = () => {
     );
 };
 
+// Print Window Box Renderer - soluk ekran ile seçim alanını gösterir
+const PrintWindowBoxRenderer = () => {
+    const { zoomWindowBox, printWindowMode } = useDrawing();
+    const { viewport } = useThree();
+
+    if (!printWindowMode || !zoomWindowBox) return null;
+
+    const { start, end } = zoomWindowBox;
+    const minX = Math.min(start[0], end[0]);
+    const maxX = Math.max(start[0], end[0]);
+    const minY = Math.min(start[1], end[1]);
+    const maxY = Math.max(start[1], end[1]);
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    if (width < 0.1 || height < 0.1) return null;
+
+    // Get viewport bounds for large overlay
+    const overlaySize = Math.max(viewport.width, viewport.height) * 5;
+
+    return (
+        <>
+            {/* Dimmed background overlay - large plane with hole effect */}
+            <mesh position={[0, 0, 0.5]}>
+                <planeGeometry args={[overlaySize, overlaySize]} />
+                <meshBasicMaterial color="#000000" opacity={0.5} transparent depthWrite={false} />
+            </mesh>
+
+            {/* Clear selection area - shows normal brightness */}
+            <mesh position={[centerX, centerY, 0.6]}>
+                <planeGeometry args={[width, height]} />
+                <meshBasicMaterial color="#ffffff" opacity={0.5} transparent depthWrite={false} />
+            </mesh>
+
+            {/* Selection border */}
+            <mesh position={[centerX, centerY, 0.7]}>
+                <planeGeometry args={[width, height]} />
+                <meshBasicMaterial color="#00aaff" opacity={0.1} transparent />
+                <lineSegments>
+                    <edgesGeometry args={[new THREE.PlaneGeometry(width, height)]} />
+                    <lineBasicMaterial color="#00aaff" linewidth={3} />
+                </lineSegments>
+            </mesh>
+        </>
+    );
+};
+
 // Dinamik Grid - kamerayı takip eder
 const DynamicGrid = () => {
     const { camera } = useThree();
@@ -437,20 +487,21 @@ const DynamicGrid = () => {
         const orthoCamera = camera as THREE.OrthographicCamera;
         if (!orthoCamera.isOrthographicCamera) return;
 
-        // Grid'i kamera pozisyonuna taşı (X ve Y), Z=-1 arkada kalması için
+        // Grid'i kamera pozisyonuna taşı (X ve Y), Z=-10 arkada kalması için
         const gridStep = 100; // Grid snap step
         gridRef.current.position.x = Math.round(camera.position.x / gridStep) * gridStep;
         gridRef.current.position.y = Math.round(camera.position.y / gridStep) * gridStep;
-        gridRef.current.position.z = -1; // Çizimlerin arkasında
+        gridRef.current.position.z = -10; // Çizimlerin en arkasında
     });
 
     // Çok büyük grid - her zaman görünür olsun
     return (
         <gridHelper
             ref={gridRef}
-            args={[100000, 1000, 0x444444, 0x333333]}
+            args={[100000, 1000, 0x334455, 0x222a33]} // Subtle blue-grey grid
             rotation={[Math.PI / 2, 0, 0]}
-            position={[0, 0, -1]}
+            position={[0, 0, -10]}
+            renderOrder={-999} // En altta çizilmesi için
         />
     );
 };
@@ -493,6 +544,7 @@ const Scene = () => {
             <PreviewRenderer />
             <DynamicInput />
             <ZoomWindowBoxRenderer />
+            <PrintWindowBoxRenderer />
         </>
     );
 };

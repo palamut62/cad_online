@@ -1,0 +1,170 @@
+.layer-manager {
+    background: #2b2b2b;
+    color: #e0e0e0;
+    width: 600px;
+    max-height: 500px;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #444;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 13px;
+}
+
+.layer-manager-header {
+    padding: 10px;
+    background: #333;
+    border-bottom: 1px solid #444;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.layer-manager-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.layer-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.layer-actions input {
+    background: #222;
+    border: 1px solid #555;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 2px;
+}
+
+.add-layer-btn {
+    background: #333;
+    border: 1px solid #555;
+    color: #e0e0e0;
+    padding: 4px 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+}
+
+.add-layer-btn:hover {
+    background: #444;
+}
+
+.layer-list {
+    flex: 1;
+    overflow-y: auto;
+    background: #222;
+}
+
+.layer-row {
+    display: flex;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid #2a2a2a;
+    cursor: pointer;
+}
+
+.layer-row:hover {
+    background: #2a2a2a;
+}
+
+.layer-row.active {
+    background: #1a3c5e;
+    /* AutoCAD-like selection blue */
+}
+
+.layer-row.header {
+    background: #333;
+    font-weight: bold;
+    color: #aaa;
+    border-bottom: 1px solid #444;
+    cursor: default;
+}
+
+.layer-row.header:hover {
+    background: #333;
+}
+
+/* Columns */
+.col-status {
+    width: 40px;
+    text-align: center;
+}
+
+.col-name {
+    flex: 1;
+    padding: 0 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.col-color {
+    width: 50px;
+    text-align: center;
+}
+
+.col-visible,
+.col-locked,
+.col-plot {
+    width: 40px;
+    text-align: center;
+    cursor: pointer;
+}
+
+.col-action {
+    width: 40px;
+    text-align: center;
+}
+
+/* Icons */
+.material-icons {
+    font-size: 16px;
+    vertical-align: middle;
+    color: #888;
+}
+
+.active-icon {
+    color: #4caf50;
+    font-weight: bold;
+}
+
+.col-visible .material-icons {
+    color: #d4d4d4;
+}
+
+.col-locked .material-icons {
+    color: #d4d4d4;
+}
+
+.layer-row:not(.header) .col-visible:hover .material-icons,
+.layer-row:not(.header) .col-locked:hover .material-icons,
+.layer-row:not(.header) .col-plot:hover .material-icons {
+    color: white;
+}
+
+.delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    opacity: 0.5;
+}
+
+.delete-btn:hover {
+    opacity: 1;
+    color: #ff5252;
+}
+
+input[type="color"] {
+    width: 24px;
+    height: 18px;
+    border: none;
+    padding: 0;
+    background: none;
+    cursor: pointer;
+}

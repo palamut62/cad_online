@@ -3,9 +3,11 @@ import * as THREE from 'three';
 import { Line, Text } from '@react-three/drei';
 import { useDrawing } from '../../context/DrawingContext';
 import type { Point, Entity } from '../../types/entities';
+import { DEFAULT_LAYER } from '../../types/layers';
 import { getGripPoints, rotatePoint } from '../../utils/geometryUtils';
 import { getPatternTexture } from '../../utils/hatchPatterns';
 import { calculateDimensionGeometry } from '../../utils/dimensionUtils';
+import { calculateArrowCoords, formatDimensionValue, DEFAULT_DIMENSION_SETTINGS, type DecimalFormat } from '../../types/dimensionSettings';
 
 // Pre-calculated circle points cache
 const circlePointsCache = new Map<string, Point[]>();
@@ -116,6 +118,86 @@ function generateSplinePoints(controlPoints: Point[], degree: number = 3, segmen
     return points;
 }
 
+// Ok renderer bileşeni - farklı ok stilleri için
+interface ArrowCoords {
+    points: Point[];
+    filled: boolean;
+}
+
+const ArrowRenderer = ({ coords, color, tip }: { coords: ArrowCoords; color: string; tip: Point }) => {
+    const { points, filled } = coords;
+
+    // Dot stili için daire
+    if (points.length === 1 && filled) {
+        return (
+            <mesh position={[points[0][0], points[0][1], 0]} key={`dot-${tip[0]}-${tip[1]}`}>
+                <circleGeometry args={[1.5, 16]} />
+                <meshBasicMaterial color={color} />
+            </mesh>
+        );
+    }
+
+    // ArrowDot için - ok + nokta
+    if (points.length === 3 && filled) {
+        return (
+            <group key={`arrowdot-${tip[0]}-${tip[1]}`}>
+                {/* Kapalı ok */}
+                <mesh position={[tip[0], tip[1], 0]}>
+                    <shapeGeometry args={[
+                        new THREE.Shape()
+                            .moveTo(points[0][0] - tip[0], points[0][1] - tip[1])
+                            .lineTo(points[1][0] - tip[0], points[1][1] - tip[1])
+                            .lineTo(points[2][0] - tip[0], points[2][1] - tip[1])
+                            .lineTo(points[0][0] - tip[0], points[0][1] - tip[1])
+                    ]} />
+                    <meshBasicMaterial color={color} />
+                </mesh>
+                {/* Nokta */}
+                <mesh position={[points[0][0], points[0][1], 0]}>
+                    <circleGeometry args={[1, 16]} />
+                    <meshBasicMaterial color={color} />
+                </mesh>
+            </group>
+        );
+    }
+
+    // Kapalı ok (filled triangle)
+    if (filled && points.length === 3) {
+        return (
+            <mesh position={[tip[0], tip[1], 0]} key={`closed-${tip[0]}-${tip[1]}`}>
+                <shapeGeometry args={[
+                    new THREE.Shape()
+                        .moveTo(points[0][0] - tip[0], points[0][1] - tip[1])
+                        .lineTo(points[1][0] - tip[0], points[1][1] - tip[1])
+                        .lineTo(points[2][0] - tip[0], points[2][1] - tip[1])
+                        .lineTo(points[0][0] - tip[0], points[0][1] - tip[1])
+                ]} />
+                <meshBasicMaterial color={color} />
+            </mesh>
+        );
+    }
+
+    // Açık ok veya mimari ok (çizgiler)
+    if (points.length >= 2) {
+        return (
+            <group key={`open-${tip[0]}-${tip[1]}`}>
+                {points.map((pt, i) => (
+                    i > 0 && (
+                        <Line
+                            key={i}
+                            points={[points[i - 1], pt]}
+                            color={color}
+                            lineWidth={1.5}
+                        />
+                    )
+                ))}
+            </group>
+        );
+    }
+
+    return null;
+};
+
 const SnapMarker = ({ point, type }: { point: Point, type: string }) => {
     // Farklı snap türleri için farklı renkler
     const getSnapColor = () => {
@@ -217,40 +299,141 @@ const SelectionBoxRenderer = ({ selectionBox }: { selectionBox: any }) => {
     );
 };
 
-const HatchMaterial = React.memo(({ url, scale, rotation }: { url: string, scale: number, rotation: number }) => {
-    const texture = useMemo(() => new THREE.TextureLoader().load(url), [url]);
+// Custom component for hatch mesh with proper UV mapping
+const HatchMesh = React.memo(({ shape, pattern, color, scale = 1, rotation = 0 }: {
+    shape: THREE.Shape,
+    pattern: string,
+    color: string,
+    scale: number,
+    rotation: number
+}) => {
+    const textureUrl = pattern === 'SOLID' ? null : getPatternTexture(pattern || 'ANSI31', color);
 
-    React.useEffect(() => {
-        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-        const s = 0.1 / scale;
-        texture.repeat.set(s, s);
-        texture.rotation = rotation;
-        texture.needsUpdate = true;
-    }, [texture, scale, rotation]);
+    const geometry = useMemo(() => {
+        const geo = new THREE.ShapeGeometry(shape);
 
-    return <meshBasicMaterial map={texture} color="white" transparent opacity={0.8} side={THREE.DoubleSide} depthTest={false} />;
+        if (textureUrl) {
+            // Get UV and position attributes
+            const uvAttribute = geo.getAttribute('uv');
+            const posAttribute = geo.getAttribute('position');
+
+            // Calculate proper texture scale based on pattern
+            // Base texture is 64x64 pixels, we want it to repeat appropriately
+            const textureScale = 0.02 / scale; // Adjust this for proper scaling
+
+            // Apply rotation to UVs if needed
+            const cos = Math.cos(rotation);
+            const sin = Math.sin(rotation);
+
+            // Update UVs to use world coordinates instead of normalized bounding box
+            for (let i = 0; i < uvAttribute.count; i++) {
+                const x = posAttribute.getX(i);
+                const y = posAttribute.getY(i);
+
+                // Apply rotation if needed
+                let u = x * textureScale;
+                let v = y * textureScale;
+
+                if (rotation !== 0) {
+                    const rotatedU = u * cos - v * sin;
+                    const rotatedV = u * sin + v * cos;
+                    u = rotatedU;
+                    v = rotatedV;
+                }
+
+                uvAttribute.setXY(i, u, v);
+            }
+            uvAttribute.needsUpdate = true;
+        }
+
+        return geo;
+    }, [shape, textureUrl, scale, rotation]);
+
+    const texture = useMemo(() => {
+        if (!textureUrl) return null;
+        const tex = new THREE.TextureLoader().load(textureUrl);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        // Since UVs are already in world coordinates, we just need wrap repeat
+        tex.repeat.set(1, 1);
+        tex.needsUpdate = true;
+        return tex;
+    }, [textureUrl]);
+
+    if (pattern === 'SOLID' || !textureUrl) {
+        return (
+            <mesh position={[0, 0, -0.01]} geometry={geometry}>
+                <meshBasicMaterial color={color} transparent opacity={0.5} side={THREE.DoubleSide} />
+            </mesh>
+        );
+    }
+
+    return (
+        <mesh position={[0, 0, -0.01]} geometry={geometry}>
+            <meshBasicMaterial map={texture} color="white" transparent opacity={0.8} side={THREE.DoubleSide} />
+        </mesh>
+    );
 });
 
-HatchMaterial.displayName = 'HatchMaterial';
+HatchMesh.displayName = 'HatchMesh';
 
 // Memoized entity component to prevent re-renders
 interface EntityRendererProps {
     entity: Entity;
     isSelected: boolean;
+    isHovered?: boolean;
 }
 
-const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererProps) => {
-    const displayColor = isSelected ? '#0078d4' : ent.color;
+const EntityRenderer = React.memo(({ entity: ent, isSelected, isHovered }: EntityRendererProps) => {
+    const { setDimensionEditDialogState, toggleSelection, activeCommand } = useDrawing();
+    // Selected: blue, Hovered: cyan, Normal: entity color
+    const displayColor = isSelected ? '#0078d4' : isHovered ? '#00d4ff' : ent.color;
     const displayDashed = isSelected;
+    const lineWidth = isHovered && !isSelected ? 2.5 : isSelected ? 2 : 1.5;
+
+    // Dimension tıklama ile düzenleme (tek tıklama veya çift tıklama)
+    // Entity tıklama yönetimi (Seçim ve Düzenleme)
+    const handleEntityClick = (e: any) => {
+        // Çizim komutlarında (LINE, CIRCLE vb.) tıklama noktası önemlidir, nesne seçimi değil.
+        // Ancak IDLE veya Düzenleme komutlarında (MOVE, COPY vb.) nesne seçimi gerekir.
+        const isEditCommand = ['MOVE', 'COPY', 'ROTATE', 'SCALE', 'MIRROR', 'ERASE', 'OFFSET', 'EXPLODE', 'TRIM', 'EXTEND', 'JOIN', 'FILLET', 'CHAMFER'].includes(activeCommand || '');
+
+        if (!activeCommand || isEditCommand) {
+            e.stopPropagation();
+            // Düzenleme modunda veya Ctrl/Shift basılıysa çoklu seçim yap
+            // toggleSelection genellikle tek argüman alır (ID) ve var olanı tersine çevirir.
+            // Çoklu seçim desteği Context implementasyonuna bağlıdır, ancak varsayılan davranış genellikle 'seçime ekle/çıkar' şeklindedir.
+            toggleSelection(ent.id);
+        }
+
+        // Dimension düzenleme (IDLE modunda)
+        if (ent.type === 'DIMENSION' && !activeCommand) {
+            // Tek tıklama ile seçim, çift tıklama ile edit (daha aşağıda handleDoubleClick var)
+        }
+    };
+
+    // Dimension edit için çift tıklama
+    const handleDimensionClick = (e: any) => {
+        if (ent.type === 'DIMENSION' && !activeCommand) {
+            e.stopPropagation();
+            setDimensionEditDialogState({
+                isOpen: true,
+                entityId: ent.id
+            });
+        }
+    };
+
+    // Alias for backward compatibility
+    const handleDoubleClick = handleDimensionClick;
 
     if (ent.type === 'LINE') {
         return (
             <Line
                 points={[ent.start, ent.end]}
                 color={displayColor}
-                lineWidth={isSelected ? 3 : 1}
+                lineWidth={lineWidth}
                 dashed={displayDashed}
                 dashScale={5}
+                onClick={handleEntityClick}
             />
         );
     }
@@ -261,9 +444,10 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
             <Line
                 points={points}
                 color={displayColor}
-                lineWidth={isSelected ? 3 : 1}
+                lineWidth={lineWidth}
                 dashed={displayDashed}
                 dashScale={5}
+                onClick={handleEntityClick}
             />
         );
     }
@@ -275,9 +459,10 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
             <Line
                 points={points}
                 color={displayColor}
-                lineWidth={isSelected ? 3 : 1}
+                lineWidth={lineWidth}
                 dashed={displayDashed}
                 dashScale={10}
+                onClick={handleEntityClick}
             />
         );
     }
@@ -288,9 +473,10 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
             <Line
                 points={points}
                 color={displayColor}
-                lineWidth={isSelected ? 3 : 1}
+                lineWidth={lineWidth}
                 dashed={displayDashed}
                 dashScale={5}
+                onClick={handleEntityClick}
             />
         );
     }
@@ -305,9 +491,10 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
             <Line
                 points={points}
                 color={displayColor}
-                lineWidth={isSelected ? 3 : 1}
+                lineWidth={lineWidth}
                 dashed={displayDashed}
                 dashScale={5}
+                onClick={handleEntityClick}
             />
         );
     }
@@ -316,7 +503,7 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
         const size = 0.5;
         const p = ent.position;
         return (
-            <group>
+            <group onClick={handleEntityClick}>
                 <Line points={[[p[0] - size, p[1], 0], [p[0] + size, p[1], 0]]} color={displayColor} lineWidth={2} />
                 <Line points={[[p[0], p[1] - size, 0], [p[0], p[1] + size, 0]]} color={displayColor} lineWidth={2} />
             </group>
@@ -332,6 +519,7 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
                 lineWidth={isSelected ? 3 : 1}
                 dashed={displayDashed}
                 dashScale={5}
+                onClick={handleEntityClick}
             />
         );
     }
@@ -393,9 +581,10 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
     }
 
     if (ent.type === 'HATCH') {
-        const { boundary, pattern, scale = 1, rotation = 0 } = ent;
+        const { boundary, pattern, scale = 1, rotation = 0, islands } = ent;
         if (!boundary || !boundary.vertices || boundary.vertices.length < 3) return null;
 
+        // Create outer boundary shape
         const shape = new THREE.Shape();
         shape.moveTo(boundary.vertices[0][0], boundary.vertices[0][1]);
         for (let i = 1; i < boundary.vertices.length; i++) {
@@ -403,17 +592,31 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
         }
         shape.closePath();
 
-        const textureUrl = pattern.name === 'SOLID' ? null : getPatternTexture(pattern.name || 'ANSI31', displayColor);
+        // Add island holes if present
+        if (islands && islands.length > 0) {
+            for (const island of islands) {
+                if (island.vertices && island.vertices.length >= 3) {
+                    const hole = new THREE.Path();
+                    hole.moveTo(island.vertices[0][0], island.vertices[0][1]);
+                    for (let i = 1; i < island.vertices.length; i++) {
+                        hole.lineTo(island.vertices[i][0], island.vertices[i][1]);
+                    }
+                    hole.closePath();
+                    shape.holes.push(hole);
+                }
+            }
+        }
 
         return (
-            <mesh position={[0, 0, -0.01]}>
-                <shapeGeometry args={[shape]} />
-                {textureUrl ? (
-                    <HatchMaterial url={textureUrl} scale={scale} rotation={rotation} />
-                ) : (
-                    <meshBasicMaterial color={displayColor} transparent opacity={0.5} side={THREE.DoubleSide} depthTest={false} />
-                )}
-            </mesh>
+            <group onClick={handleEntityClick}>
+                <HatchMesh
+                    shape={shape}
+                    pattern={pattern.name || 'ANSI31'}
+                    color={displayColor}
+                    scale={scale}
+                    rotation={rotation}
+                />
+            </group>
         );
     }
 
@@ -600,16 +803,41 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
 
         if (!shouldRender) return null;
 
+        // Metin formatlama - gelişmiş ayarlar desteği
         const displayText = text || (
             type === 'linear' || type === 'aligned'
-                ? measureLength.toFixed(2)
+                ? formatDimensionValue(
+                    measureLength,
+                    {
+                        ...DEFAULT_DIMENSION_SETTINGS,
+                        precision: (ent.precision as DecimalFormat) || DEFAULT_DIMENSION_SETTINGS.precision,
+                        unitDisplay: ent.showUnit ? 'suffix' : 'none'
+                    },
+                    ent.unit || 'mm'
+                )
                 : text || ''
         );
 
+        const textColor = ent.textColor || ent.color || DEFAULT_DIMENSION_SETTINGS.textColor;
+        const displayTextHeight = ent.textHeight || DEFAULT_DIMENSION_SETTINGS.textHeight;
+
         return (
-            <group>
-                {/* Dimension Line */}
-                <Line points={[dimStart, dimEnd]} color={displayColor} lineWidth={1} />
+            <group onDoubleClick={handleDoubleClick} onClick={handleDimensionClick}>
+                {/* Dimension Line - with clickable area */}
+                <Line
+                    points={[dimStart, dimEnd]}
+                    color={ent.dimLineColor || displayColor}
+                    lineWidth={ent.dimLineWeight || DEFAULT_DIMENSION_SETTINGS.dimLineWeight}
+                />
+                {/* Invisible clickable mesh over dimension line */}
+                <mesh
+                    position={[(dimStart[0] + dimEnd[0]) / 2, (dimStart[1] + dimEnd[1]) / 2, 0.01]}
+                    rotation={[0, 0, rotation]}
+                    onClick={handleDimensionClick}
+                >
+                    <planeGeometry args={[Math.hypot(dimEnd[0] - dimStart[0], dimEnd[1] - dimStart[1]), 5]} />
+                    <meshBasicMaterial transparent opacity={0} />
+                </mesh>
 
                 {/* Extension Lines with proper offset and extend */}
                 {(dimType === 'DIMLINEAR' || dimType === 'DIMALIGNED') && (
@@ -617,164 +845,231 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
                         const offset = ent.extensionLineOffset || 1.5; // Gap from object
                         const ext = ent.extensionLineExtend || 1.25; // Extend past dim line
 
-                        // Direction from start to dimStart
-                        const dir1X = dimStart[0] - start[0];
-                        const dir1Y = dimStart[1] - start[1];
-                        const len1 = Math.sqrt(dir1X * dir1X + dir1Y * dir1Y);
-                        const norm1X = len1 > 0 ? dir1X / len1 : 0;
-                        const norm1Y = len1 > 0 ? dir1Y / len1 : 0;
+                        // Calculate consistent normal direction from start->end line
+                        const dirX = end[0] - start[0];
+                        const dirY = end[1] - start[1];
+                        const len = Math.sqrt(dirX * dirX + dirY * dirY);
+                        const unitDirX = len > 0 ? dirX / len : 1;
+                        const unitDirY = len > 0 ? dirY / len : 0;
 
-                        const dir2X = dimEnd[0] - end[0];
-                        const dir2Y = dimEnd[1] - end[1];
-                        const len2 = Math.sqrt(dir2X * dir2X + dir2Y * dir2Y);
-                        const norm2X = len2 > 0 ? dir2X / len2 : 0;
-                        const norm2Y = len2 > 0 ? dir2Y / len2 : 0;
+                        // Normal vector (rotated 90 degrees)
+                        const normX = -unitDirY;
+                        const normY = unitDirX;
+
+                        // Determine which side the dimension line is on
+                        const toDimX = dimStart[0] - start[0];
+                        const toDimY = dimStart[1] - start[1];
+                        const side = (toDimX * normX + toDimY * normY) >= 0 ? 1 : -1;
+
+                        // Apply direction
+                        const dirNormX = normX * side;
+                        const dirNormY = normY * side;
 
                         // Extension line 1: from (start + offset) to (dimStart + extend)
                         const ext1Start: [number, number, number] = [
-                            start[0] + norm1X * offset,
-                            start[1] + norm1Y * offset,
+                            start[0] + dirNormX * offset,
+                            start[1] + dirNormY * offset,
                             0
                         ];
                         const ext1End: [number, number, number] = [
-                            dimStart[0] + norm1X * ext,
-                            dimStart[1] + norm1Y * ext,
+                            dimStart[0] + dirNormX * ext,
+                            dimStart[1] + dirNormY * ext,
                             0
                         ];
 
                         // Extension line 2: from (end + offset) to (dimEnd + extend)
                         const ext2Start: [number, number, number] = [
-                            end[0] + norm2X * offset,
-                            end[1] + norm2Y * offset,
+                            end[0] + dirNormX * offset,
+                            end[1] + dirNormY * offset,
                             0
                         ];
                         const ext2End: [number, number, number] = [
-                            dimEnd[0] + norm2X * ext,
-                            dimEnd[1] + norm2Y * ext,
+                            dimEnd[0] + dirNormX * ext,
+                            dimEnd[1] + dirNormY * ext,
                             0
                         ];
 
                         return (
                             <>
-                                <Line points={[ext1Start, ext1End]} color={displayColor} lineWidth={0.5} />
-                                <Line points={[ext2Start, ext2End]} color={displayColor} lineWidth={0.5} />
+                                <Line
+                                    points={[ext1Start, ext1End]}
+                                    color={ent.extLineColor || displayColor}
+                                    lineWidth={ent.extLineWeight || DEFAULT_DIMENSION_SETTINGS.extLineWeight}
+                                />
+                                <Line
+                                    points={[ext2Start, ext2End]}
+                                    color={ent.extLineColor || displayColor}
+                                    lineWidth={ent.extLineWeight || DEFAULT_DIMENSION_SETTINGS.extLineWeight}
+                                />
                             </>
                         );
                     })()
                 )}
 
-                {/* Angular Arc */}
+                {/* Angular Arc with Extension Lines and Arrows */}
                 {dimType === 'DIMANGULAR' && (ent as any)._curvePoints && (
-                    <>
-                        <Line points={(ent as any)._curvePoints} color={displayColor} lineWidth={1} />
-                        {/* Extension Lines for Angular (Center to Start/End of Arc) */}
-                        {/* Note: Standard angular dims have extension lines from the definition points to the arc. */}
-                        {/* ent.start is P1, ent.end is P2. Arc starts at angle1, ends at angle2. */}
-                        {/* We draw line from P1 to ArcStart, P2 to ArcEnd? Or Center to Arc? */}
-                        {/* Center to Arc is for sectors. P1/P2 to Arc is for angular between lines. */}
-                        {/* Let's draw from P1 to ArcStart, and P2 to ArcEnd for now. */}
-                        <Line points={[start, (ent as any)._curvePoints[0]]} color={displayColor} lineWidth={0.5} dashed />
-                        <Line points={[end, (ent as any)._curvePoints[(ent as any)._curvePoints.length - 1]]} color={displayColor} lineWidth={0.5} dashed />
-                    </>
-                )}
-
-                {/* Arrows */}
-                {(dimType === 'DIMLINEAR' || dimType === 'DIMALIGNED') && (
-                    <>
-                        {/* Arrow at dimStart */}
-                        {(() => {
-                            const arrowSize = ent.arrowSize || 5;
-                            const angle = Math.atan2(dimEnd[1] - dimStart[1], dimEnd[0] - dimStart[0]);
-                            const arrowAngle = Math.PI / 6; // 30 degrees
-                            return (
-                                <>
-                                    <Line
-                                        points={[
-                                            dimStart,
-                                            [
-                                                dimStart[0] + arrowSize * Math.cos(angle + Math.PI - arrowAngle),
-                                                dimStart[1] + arrowSize * Math.sin(angle + Math.PI - arrowAngle),
-                                                0
-                                            ]
-                                        ]}
-                                        color={displayColor}
-                                        lineWidth={1}
-                                    />
-                                    <Line
-                                        points={[
-                                            dimStart,
-                                            [
-                                                dimStart[0] + arrowSize * Math.cos(angle + Math.PI + arrowAngle),
-                                                dimStart[1] + arrowSize * Math.sin(angle + Math.PI + arrowAngle),
-                                                0
-                                            ]
-                                        ]}
-                                        color={displayColor}
-                                        lineWidth={1}
-                                    />
-                                    {/* Arrow at dimEnd */}
-                                    <Line
-                                        points={[
-                                            dimEnd,
-                                            [
-                                                dimEnd[0] + arrowSize * Math.cos(angle - arrowAngle),
-                                                dimEnd[1] + arrowSize * Math.sin(angle - arrowAngle),
-                                                0
-                                            ]
-                                        ]}
-                                        color={displayColor}
-                                        lineWidth={1}
-                                    />
-                                    <Line
-                                        points={[
-                                            dimEnd,
-                                            [
-                                                dimEnd[0] + arrowSize * Math.cos(angle + arrowAngle),
-                                                dimEnd[1] + arrowSize * Math.sin(angle + arrowAngle),
-                                                0
-                                            ]
-                                        ]}
-                                        color={displayColor}
-                                        lineWidth={1}
-                                    />
-                                </>
-                            );
-                        })()}
-                    </>
-                )}
-
-                {/* Radius/Diameter Arrow */}
-                {(dimType === 'DIMRADIUS' || dimType === 'DIMDIAMETER') && (
                     (() => {
-                        const arrowSize = ent.arrowSize || 2.5;
-                        const angle = Math.atan2(dimEnd[1] - dimStart[1], dimEnd[0] - dimStart[0]);
-                        const arrowAngle = Math.PI / 6;
+                        const curvePoints = (ent as any)._curvePoints as [number, number, number][];
+                        const center = (ent as any).center as Point;
+                        const startAngle = (ent as any).startAngle as number;
+                        const endAngle = (ent as any).endAngle as number;
+                        const radius = Math.hypot(curvePoints[0][0] - center[0], curvePoints[0][1] - center[1]);
+
+                        // Arc start and end points
+                        const arcStart = curvePoints[0];
+                        const arcEnd = curvePoints[curvePoints.length - 1];
+
+                        // Extension line settings
+                        const extOffset = ent.extensionLineOffset || 1.5;
+                        const extExtend = ent.extensionLineExtend || 2.0;
+                        const extLineColor = ent.extLineColor || displayColor;
+                        const extLineWeight = ent.extLineWeight || DEFAULT_DIMENSION_SETTINGS.extLineWeight;
+
+                        // Calculate extension lines from center outward along start/end angles
+                        // Extension line 1: along startAngle direction
+                        const ext1Inner: [number, number, number] = [
+                            center[0] + Math.cos(startAngle) * extOffset,
+                            center[1] + Math.sin(startAngle) * extOffset,
+                            0
+                        ];
+                        const ext1Outer: [number, number, number] = [
+                            center[0] + Math.cos(startAngle) * (radius + extExtend),
+                            center[1] + Math.sin(startAngle) * (radius + extExtend),
+                            0
+                        ];
+
+                        // Extension line 2: along endAngle direction
+                        let actualEndAngle = endAngle;
+                        if (actualEndAngle < startAngle) actualEndAngle += Math.PI * 2;
+
+                        const ext2Inner: [number, number, number] = [
+                            center[0] + Math.cos(endAngle) * extOffset,
+                            center[1] + Math.sin(endAngle) * extOffset,
+                            0
+                        ];
+                        const ext2Outer: [number, number, number] = [
+                            center[0] + Math.cos(endAngle) * (radius + extExtend),
+                            center[1] + Math.sin(endAngle) * (radius + extExtend),
+                            0
+                        ];
+
+                        // Arrow settings
+                        const arrowStyle = ent.arrowStyle || DEFAULT_DIMENSION_SETTINGS.arrowStyle;
+                        const arrowSize = (ent.arrowSize || DEFAULT_DIMENSION_SETTINGS.arrowSize) * (ent.arrowSizeMultiplier || 1);
+                        const arrowColor = ent.arrowColor || ent.color || DEFAULT_DIMENSION_SETTINGS.arrowColor;
+
+                        // Calculate arrow angles (tangent to arc at start/end)
+                        // Tangent at start: perpendicular to radius, pointing CCW
+                        const startTangentAngle = startAngle + Math.PI / 2;
+                        // Tangent at end: perpendicular to radius, pointing CCW (arrow points inward)
+                        const endTangentAngle = endAngle - Math.PI / 2;
+
+                        // Arrow coordinates
+                        const startArrowCoords = calculateArrowCoords(arcStart, startTangentAngle, arrowSize, arrowStyle, true);
+                        const endArrowCoords = calculateArrowCoords(arcEnd, endTangentAngle, arrowSize, arrowStyle, true);
+
                         return (
                             <>
+                                {/* Arc dimension line */}
                                 <Line
-                                    points={[
-                                        dimEnd,
-                                        [
-                                            dimEnd[0] + arrowSize * Math.cos(angle + Math.PI - arrowAngle),
-                                            dimEnd[1] + arrowSize * Math.sin(angle + Math.PI - arrowAngle),
-                                            0
-                                        ]
-                                    ]}
-                                    color={displayColor}
-                                    lineWidth={1}
+                                    points={curvePoints}
+                                    color={ent.dimLineColor || displayColor}
+                                    lineWidth={ent.dimLineWeight || DEFAULT_DIMENSION_SETTINGS.dimLineWeight}
                                 />
+
+                                {/* Extension Line 1 */}
                                 <Line
-                                    points={[
-                                        dimEnd,
-                                        [
-                                            dimEnd[0] + arrowSize * Math.cos(angle + Math.PI + arrowAngle),
-                                            dimEnd[1] + arrowSize * Math.sin(angle + Math.PI + arrowAngle),
-                                            0
-                                        ]
-                                    ]}
-                                    color={displayColor}
-                                    lineWidth={1}
+                                    points={[ext1Inner, ext1Outer]}
+                                    color={extLineColor}
+                                    lineWidth={extLineWeight}
                                 />
+
+                                {/* Extension Line 2 */}
+                                <Line
+                                    points={[ext2Inner, ext2Outer]}
+                                    color={extLineColor}
+                                    lineWidth={extLineWeight}
+                                />
+
+                                {/* Arrows at arc ends */}
+                                {arrowStyle !== 'none' && (
+                                    <>
+                                        <ArrowRenderer
+                                            coords={startArrowCoords}
+                                            color={arrowColor}
+                                            tip={arcStart}
+                                        />
+                                        <ArrowRenderer
+                                            coords={endArrowCoords}
+                                            color={arrowColor}
+                                            tip={arcEnd}
+                                        />
+                                    </>
+                                )}
+                            </>
+                        );
+                    })()
+                )}
+
+                {/* Arrows - Enhanced with style support */}
+                {(dimType === 'DIMLINEAR' || dimType === 'DIMALIGNED') && (
+                    (() => {
+                        const arrowStyle = ent.arrowStyle || DEFAULT_DIMENSION_SETTINGS.arrowStyle;
+                        const arrowSize = (ent.arrowSize || DEFAULT_DIMENSION_SETTINGS.arrowSize) * (ent.arrowSizeMultiplier || 1);
+                        const arrowColor = ent.arrowColor || ent.color || DEFAULT_DIMENSION_SETTINGS.arrowColor;
+                        const angle = Math.atan2(dimEnd[1] - dimStart[1], dimEnd[0] - dimStart[0]);
+                        const arrowDirection = ent.arrowDirection || DEFAULT_DIMENSION_SETTINGS.arrowDirection;
+
+                        // Ok yönüne göre karar ver
+                        const showStartArrow = arrowDirection === 'both' || arrowDirection === 'outside';
+                        const showEndArrow = arrowDirection === 'both' || arrowDirection === 'outside';
+
+                        // Start arrow (pointing inward)
+                        const startArrowCoords = calculateArrowCoords(dimStart, angle, arrowSize, arrowStyle, true);
+                        // End arrow (pointing inward)
+                        const endArrowCoords = calculateArrowCoords(dimEnd, angle + Math.PI, arrowSize, arrowStyle, true);
+
+                        return (
+                            <>
+                                {showStartArrow && arrowStyle !== 'none' && (
+                                    <ArrowRenderer
+                                        coords={startArrowCoords}
+                                        color={arrowColor}
+                                        tip={dimStart}
+                                    />
+                                )}
+                                {showEndArrow && arrowStyle !== 'none' && (
+                                    <ArrowRenderer
+                                        coords={endArrowCoords}
+                                        color={arrowColor}
+                                        tip={dimEnd}
+                                    />
+                                )}
+                            </>
+                        );
+                    })()
+                )}
+
+                {/* Radius/Diameter Arrow - Enhanced */}
+                {(dimType === 'DIMRADIUS' || dimType === 'DIMDIAMETER') && (
+                    (() => {
+                        const arrowStyle = ent.arrowStyle || DEFAULT_DIMENSION_SETTINGS.arrowStyle;
+                        const arrowSize = (ent.arrowSize || DEFAULT_DIMENSION_SETTINGS.arrowSize) * (ent.arrowSizeMultiplier || 1);
+                        const arrowColor = ent.arrowColor || ent.color || DEFAULT_DIMENSION_SETTINGS.arrowColor;
+                        const angle = Math.atan2(dimEnd[1] - dimStart[1], dimEnd[0] - dimStart[0]);
+
+                        // Ok ucu dimEnd noktasında, içe doğru
+                        const arrowCoords = calculateArrowCoords(dimEnd, angle, arrowSize, arrowStyle, true);
+
+                        return (
+                            <>
+                                {arrowStyle !== 'none' && (
+                                    <ArrowRenderer
+                                        coords={arrowCoords}
+                                        color={arrowColor}
+                                        tip={dimEnd}
+                                    />
+                                )}
                             </>
                         );
                     })()
@@ -783,8 +1078,8 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
                 {/* Text */}
                 <Text
                     position={textPos}
-                    fontSize={textHeight}
-                    color={displayColor}
+                    fontSize={displayTextHeight}
+                    color={textColor}
                     anchorX="center"
                     anchorY="bottom"
                     rotation={[0, 0, rotation]}
@@ -806,18 +1101,29 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected }: EntityRendererPr
 EntityRenderer.displayName = 'EntityRenderer';
 
 const EntitiesRenderer = React.memo(() => {
-    const { entities, tempPoints, activeCommand, cursorPosition, step, selectedIds, commandState, activeSnap, activateGrip, activeGrip, selectionBox } = useDrawing();
+    const { entities, tempPoints, activeCommand, cursorPosition, step, selectedIds, commandState, activeSnap, activateGrip, activeGrip, selectionBox, hoveredEntityId, layers } = useDrawing();
 
     // Memoize entity list rendering
     const entityList = useMemo(() => {
-        return entities.map(ent => (
-            <EntityRenderer
-                key={ent.id}
-                entity={ent}
-                isSelected={selectedIds.has(ent.id)}
-            />
-        ));
-    }, [entities, selectedIds]);
+        return entities.map(ent => {
+            const layer = layers.find(l => l.id === ent.layer) || DEFAULT_LAYER;
+            if (!layer.visible) return null;
+
+            // Resolve color: if entity color is missing or 'BYLAYER', use layer color
+            const displayEntity = (!ent.color || ent.color === 'BYLAYER')
+                ? { ...ent, color: layer.color }
+                : ent;
+
+            return (
+                <EntityRenderer
+                    key={ent.id}
+                    entity={displayEntity}
+                    isSelected={selectedIds.has(ent.id)}
+                    isHovered={hoveredEntityId === ent.id && !selectedIds.has(ent.id)}
+                />
+            );
+        });
+    }, [entities, selectedIds, hoveredEntityId, layers]);
 
     // Memoize grips rendering
     const gripsElements = useMemo(() => {

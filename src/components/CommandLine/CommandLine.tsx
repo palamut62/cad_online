@@ -1,11 +1,62 @@
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useRef, useEffect } from 'react';
 import './CommandLine.css';
 import { useDrawing } from '../../context/DrawingContext';
+import { useAI } from '../../context/AIContext';
+
 
 const CommandLine = () => {
     const [history, setHistory] = useState<string[]>(['Type a command (LINE, CIRCLE, PLINE, RECT, POLYGON, MOVE, COPY, ...)']);
     const [input, setInput] = useState('');
+    const [aiInput, setAiInput] = useState('');
     const { startCommand, activeCommand, step, handleValueInput } = useDrawing();
+    const { generateCADCommands, isLoading: isAILoading, error: aiError, selectedModel, apiKey } = useAI();
+
+    // Dragging state
+    const [position, setPosition] = useState<{ x: number, y: number } | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragOffset = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (containerRef.current) {
+            const rect = containerRef.current.getBoundingClientRect();
+            dragOffset.current = {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+            setIsDragging(true);
+
+            // If it was docked (position is null), set initial position to current calculated position
+            if (!position) {
+                setPosition({ x: rect.left, y: rect.top });
+            }
+        }
+    };
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (isDragging) {
+                setPosition({
+                    x: e.clientX - dragOffset.current.x,
+                    y: e.clientY - dragOffset.current.y
+                });
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsDragging(false);
+        };
+
+        if (isDragging) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDragging]);
 
     const handleSubmit = (e: FormEvent) => {
         e.preventDefault();
@@ -51,6 +102,22 @@ const CommandLine = () => {
         setInput('');
     };
 
+    const handleAISubmit = async (e: FormEvent) => {
+        e.preventDefault();
+        if (!aiInput.trim()) return;
+
+        const prompt = aiInput.trim();
+        setAiInput('');
+        setHistory(prev => [...prev, `AI Request: ${prompt}`]);
+
+        try {
+            await generateCADCommands(prompt);
+            setHistory(prev => [...prev, `AI: Completed generation for "${prompt}"`]);
+        } catch (err) {
+            setHistory(prev => [...prev, `AI Error: Failed to process request`]);
+        }
+    };
+
     const getPrompt = (): string => {
         if (!activeCommand) return 'Command:';
         switch (activeCommand) {
@@ -93,27 +160,93 @@ const CommandLine = () => {
                 if (step === 2) return 'Offset Select object to offset:';
                 return 'Offset Specify point on side to offset:';
             case 'ERASE': return 'Erase Select objects (press Enter to delete):';
+            case 'DIMLINEAR': return step === 1 ? 'DimLinear Specify first extension line origin:' : step === 2 ? 'DimLinear Specify second extension line origin:' : 'DimLinear Specify dimension line location:';
+            case 'DIMALIGNED': return step === 1 ? 'DimAligned Specify first extension line origin:' : step === 2 ? 'DimAligned Specify second extension line origin:' : 'DimAligned Specify dimension line location:';
+            case 'DIMRADIUS': return step === 1 ? 'DimRadius Select arc or circle:' : 'DimRadius Specify dimension line location:';
+            case 'DIMDIAMETER': return step === 1 ? 'DimDiameter Select arc or circle:' : 'DimDiameter Specify dimension line location:';
+            case 'DIMANGULAR': return step === 1 ? 'DimAngular Select first line:' : step === 2 ? 'DimAngular Select second line:' : 'DimAngular Specify dimension arc position:';
+            case 'DIMCONTINUE': return 'DimContinue Select extension line origin:';
+            case 'DIMBASELINE': return 'DimBaseline Select base dimension:';
+            case 'LEADER': return step === 1 ? 'Leader Specify arrow start point:' : step === 2 ? 'Leader Specify next point:' : 'Leader Specify text width <0>:';
+            case 'HATCH': return step === 1 ? 'Hatch Select outer boundary (closed polyline/circle/ellipse):' : 'Hatch Select island boundary or Enter to finish:';
+            case 'ARRAY': return 'Array Select objects:';
             default: return 'Command:';
         }
     };
 
+    const style: React.CSSProperties = position ? {
+        position: 'fixed', // Use fixed positioning when dragging/floating
+        left: position.x,
+        top: position.y,
+        bottom: 'auto',
+        right: 'auto',
+        width: '600px', // Fixed width when floating, or dynamic based on start? Let's use a safe default or keep it auto width if possible but auto might shrink. 
+        // Better to have a min-width or specific width. Let's try to infer or set a good default.
+        // Actually, let's keep it 'auto' but constrained by min-width in CSS, or set a practical width.
+        // If we want it to look like the docked version but floating, giving it a width is good.
+    } : {};
+
     return (
-        <div className="command-line-container">
-            <div className="command-history">
-                {history.slice(-4).map((line, i) => (
-                    <div key={i} className="history-line">{line}</div>
-                ))}
+        <div
+            className={`command-line-container ${isDragging ? 'dragging' : ''}`}
+            ref={containerRef}
+            style={style}
+        >
+            <div
+                className="command-line-handle"
+                onMouseDown={handleMouseDown}
+            >
+                <span className="material-icons">drag_indicator</span>
             </div>
-            <form onSubmit={handleSubmit} className="command-input-area">
-                <span className="prompt-label">{getPrompt()}</span>
-                <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    className="command-input"
-                    autoFocus
-                />
-            </form>
+            <div className="command-line-content">
+                <div className="command-history">
+                    {history.slice(-4).map((line, i) => (
+                        <div key={i} className="history-line">{line}</div>
+                    ))}
+                    {aiError && <div className="history-line error" style={{ color: '#ff6b6b' }}>AI Error: {aiError}</div>}
+                    {isAILoading && <div className="history-line info" style={{ color: '#4cc2ff' }}>AI is thinking...</div>}
+                </div>
+
+                {/* Standard Command Input */}
+                <form onSubmit={handleSubmit} className="command-input-area" style={{ borderBottom: '1px solid #333', backgroundColor: '#252525' }}>
+                    <span className="prompt-label" style={{ color: '#4cc2ff' }}>{getPrompt()}</span>
+                    <input
+                        type="text"
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        className="command-input"
+                        autoFocus
+                        placeholder="Type a command..."
+                        style={{ color: '#4cc2ff' }}
+                    />
+                </form>
+
+                {/* AI Command Input */}
+                <form onSubmit={handleAISubmit} className="command-input-area" style={{ backgroundColor: '#252525' }}>
+                    <span className="prompt-label" style={{ color: '#4cc2ff' }}>AI:</span>
+                    <div style={{ display: 'flex', width: '100%', alignItems: 'center' }}>
+                        <input
+                            type="text"
+                            value={aiInput}
+                            onChange={(e) => setAiInput(e.target.value)}
+                            className="command-input"
+                            placeholder="Doğal dil ile çizim yapın..."
+                            style={{ color: '#4cc2ff' }}
+                        />
+                        <div style={{ marginLeft: '10px', paddingRight: '10px', fontSize: '10px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: '100px', opacity: 0.4 }}>
+                            {apiKey ? (
+                                selectedModel ? (
+                                    <span style={{ color: '#4cc2ff' }}>{selectedModel.split('/').pop()}</span>
+                                ) : (
+                                    <span style={{ color: '#ff6b6b' }}>Model Yok</span>
+                                )
+                            ) : (
+                                <span style={{ color: '#ff6b6b' }}>Ayarlar Eksik</span>
+                            )}
+                        </div>
+                    </div>
+                </form>
+            </div>
         </div>
     );
 };

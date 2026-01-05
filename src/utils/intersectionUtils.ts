@@ -820,3 +820,222 @@ export function extendArcEntity(
     endAngle: extendStart ? arcEntity.endAngle : closestIntersection.angle,
   } as Entity;
 }
+
+/**
+ * Trim a LWPOLYLINE entity - can trim individual segments
+ */
+export function trimPolylineEntity(
+  polylineEntity: Entity,
+  clickPoint: Point,
+  cuttingEdges: Entity[]
+): Entity[] {
+  if (polylineEntity.type !== 'LWPOLYLINE') return [polylineEntity];
+
+  const vertices = polylineEntity.vertices as Point[];
+  if (vertices.length < 2) return [polylineEntity];
+
+  // Find which segment was clicked
+  let clickedSegmentIndex = -1;
+  let minClickDist = Infinity;
+
+  for (let i = 0; i < vertices.length - 1; i++) {
+    const segStart = vertices[i];
+    const segEnd = vertices[i + 1];
+
+    // Distance from click point to segment
+    const dx = segEnd[0] - segStart[0];
+    const dy = segEnd[1] - segStart[1];
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 0.0001) continue;
+
+    const t = Math.max(0, Math.min(1,
+      ((clickPoint[0] - segStart[0]) * dx + (clickPoint[1] - segStart[1]) * dy) / (len * len)
+    ));
+
+    const projX = segStart[0] + t * dx;
+    const projY = segStart[1] + t * dy;
+    const dist = Math.hypot(clickPoint[0] - projX, clickPoint[1] - projY);
+
+    if (dist < minClickDist) {
+      minClickDist = dist;
+      clickedSegmentIndex = i;
+    }
+  }
+
+  // Handle closed polyline
+  if (polylineEntity.closed && vertices.length >= 3) {
+    const segStart = vertices[vertices.length - 1];
+    const segEnd = vertices[0];
+    const dx = segEnd[0] - segStart[0];
+    const dy = segEnd[1] - segStart[1];
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len > 0.0001) {
+      const t = Math.max(0, Math.min(1,
+        ((clickPoint[0] - segStart[0]) * dx + (clickPoint[1] - segStart[1]) * dy) / (len * len)
+      ));
+      const projX = segStart[0] + t * dx;
+      const projY = segStart[1] + t * dy;
+      const dist = Math.hypot(clickPoint[0] - projX, clickPoint[1] - projY);
+      if (dist < minClickDist) {
+        minClickDist = dist;
+        clickedSegmentIndex = vertices.length - 1;
+      }
+    }
+  }
+
+  if (clickedSegmentIndex === -1) return [polylineEntity];
+
+  // Find intersections on the clicked segment
+  const segStart = vertices[clickedSegmentIndex];
+  const segEnd = clickedSegmentIndex === vertices.length - 1
+    ? (polylineEntity.closed ? vertices[0] : vertices[clickedSegmentIndex])
+    : vertices[clickedSegmentIndex + 1];
+
+  const intersections: { point: Point; t: number }[] = [];
+
+  // Create a temporary line entity for the segment
+  const tempLine: Entity = {
+    type: 'LINE',
+    start: segStart,
+    end: segEnd,
+    id: -1,
+    color: '#fff',
+    layer: '0'
+  };
+
+  for (const cutter of cuttingEdges) {
+    const results = findEntityIntersections(tempLine, cutter);
+    for (const result of results) {
+      const dx = segEnd[0] - segStart[0];
+      const dy = segEnd[1] - segStart[1];
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 0.0001) continue;
+
+      const t = ((result.point[0] - segStart[0]) * dx +
+                 (result.point[1] - segStart[1]) * dy) / (len * len);
+
+      if (t > 0.001 && t < 0.999) {
+        intersections.push({ point: result.point, t });
+      }
+    }
+  }
+
+  if (intersections.length === 0) {
+    // No intersection on this segment - remove the entire segment
+    // Create polylines from remaining segments
+    if (vertices.length <= 2) return [];
+
+    const newVertices = vertices.filter((_, i) =>
+      i !== clickedSegmentIndex && i !== clickedSegmentIndex + 1
+    );
+
+    if (newVertices.length < 2) return [];
+
+    return [{
+      ...polylineEntity,
+      vertices: newVertices,
+      closed: false,
+      id: Date.now() + Math.random()
+    } as Entity];
+  }
+
+  // Sort intersections by parameter t
+  intersections.sort((a, b) => a.t - b.t);
+
+  // Find which portion to trim based on click position
+  const dx = segEnd[0] - segStart[0];
+  const dy = segEnd[1] - segStart[1];
+  const len = Math.sqrt(dx * dx + dy * dy);
+  const clickT = len > 0.0001
+    ? ((clickPoint[0] - segStart[0]) * dx + (clickPoint[1] - segStart[1]) * dy) / (len * len)
+    : 0;
+
+  // Determine which side of intersection(s) to keep
+  let trimStart = false;
+  let trimEnd = false;
+
+  if (intersections.length === 1) {
+    if (clickT < intersections[0].t) {
+      trimStart = true;
+    } else {
+      trimEnd = true;
+    }
+  } else {
+    // Multiple intersections - find which segment contains click
+    let prevT = 0;
+    for (const inter of intersections) {
+      if (clickT >= prevT && clickT <= inter.t) {
+        // Click is between prevT and inter.t - trim this portion
+        break;
+      }
+      prevT = inter.t;
+    }
+    if (clickT < intersections[0].t) {
+      trimStart = true;
+    } else if (clickT > intersections[intersections.length - 1].t) {
+      trimEnd = true;
+    }
+  }
+
+  // Create new polyline(s)
+  const results: Entity[] = [];
+
+  if (trimStart) {
+    // Keep from first intersection to end
+    const newVertices: Point[] = [
+      intersections[0].point,
+      ...vertices.slice(clickedSegmentIndex + 1)
+    ];
+    if (newVertices.length >= 2) {
+      results.push({
+        ...polylineEntity,
+        vertices: newVertices,
+        closed: false,
+        id: Date.now() + Math.random()
+      } as Entity);
+    }
+  } else if (trimEnd) {
+    // Keep from start to last intersection
+    const newVertices: Point[] = [
+      ...vertices.slice(0, clickedSegmentIndex + 1),
+      intersections[intersections.length - 1].point
+    ];
+    if (newVertices.length >= 2) {
+      results.push({
+        ...polylineEntity,
+        vertices: newVertices,
+        closed: false,
+        id: Date.now() + Math.random()
+      } as Entity);
+    }
+  } else {
+    // Keep both ends, remove middle
+    const newVertices1: Point[] = [
+      ...vertices.slice(0, clickedSegmentIndex + 1),
+      intersections[0].point
+    ];
+    const newVertices2: Point[] = [
+      intersections[intersections.length - 1].point,
+      ...vertices.slice(clickedSegmentIndex + 1)
+    ];
+
+    if (newVertices1.length >= 2) {
+      results.push({
+        ...polylineEntity,
+        vertices: newVertices1,
+        closed: false,
+        id: Date.now() + Math.random()
+      } as Entity);
+    }
+    if (newVertices2.length >= 2) {
+      results.push({
+        ...polylineEntity,
+        vertices: newVertices2,
+        closed: false,
+        id: Date.now() + Math.random()
+      } as Entity);
+    }
+  }
+
+  return results;
+}

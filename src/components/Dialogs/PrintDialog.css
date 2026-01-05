@@ -1,0 +1,427 @@
+/* Print specific styles */
+@media print {
+
+    /* Hide all UI elements */
+    .ribbon-container,
+    .side-toolbar,
+    .sheet-tabs,
+    .status-bar,
+    .command-line-container,
+    .title-bar,
+    .app-menu-button,
+    .quick-access-toolbar,
+    .window-controls-placeholder,
+    .print-dialog-overlay,
+    .print-preview-overlay,
+    .modal-overlay,
+    .view-mode-info,
+    .view-cube,
+    .dialog-overlay {
+        display: none !important;
+    }
+
+    /* Reset Main Layout */
+    .main-layout {
+        display: block !important;
+        height: auto !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+    }
+
+    .workspace {
+        display: block !important;
+        height: 100% !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+    }
+
+    .viewport-area {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        background: white !important;
+    }
+
+    canvas {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: contain !important;
+    }
+
+    /* Force monochrome if class present */
+    body.print-monochrome canvas {
+        filter: grayscale(100%) contrast(120%);
+    }
+
+    body.print-grayscale canvas {
+        filter: grayscale(100%);
+    }
+}
+
+.print-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    backdrop-filter: blur(4px);
+}
+
+.print-dialog {
+    background-color: #2d2d30;
+    border-radius: 8px;
+    width: 720px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    border: 1px solid #3e3e42;
+}
+
+.print-dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 20px;
+    background: linear-gradient(180deg, #3e3e42 0%, #333 100%);
+    border-bottom: 1px solid #1e1e1e;
+    border-radius: 8px 8px 0 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.print-dialog-header .material-icons {
+    color: #999;
+    transition: color 0.15s;
+}
+
+.print-dialog-header .material-icons:hover {
+    color: #fff;
+}
+
+.print-dialog-body {
+    display: flex;
+    gap: 24px;
+    padding: 20px;
+}
+
+.print-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.print-group {
+    background-color: #252526;
+    border: 1px solid #3e3e42;
+    border-radius: 6px;
+    padding: 14px;
+}
+
+.print-group-title {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #4cc2ff;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.print-field {
+    margin-bottom: 10px;
+}
+
+.print-field:last-child {
+    margin-bottom: 0;
+}
+
+.print-field label {
+    display: block;
+    font-size: 11px;
+    color: #999;
+    margin-bottom: 4px;
+}
+
+.print-field select,
+.print-field input[type="text"],
+.print-field input[type="number"] {
+    width: 100%;
+    padding: 8px 10px;
+    background-color: #1e1e1e;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 12px;
+    transition: border-color 0.15s;
+}
+
+.print-field select:hover,
+.print-field input:hover {
+    border-color: #4cc2ff;
+}
+
+.print-field select:focus,
+.print-field input:focus {
+    outline: none;
+    border-color: #4cc2ff;
+    box-shadow: 0 0 0 2px rgba(76, 194, 255, 0.15);
+}
+
+.print-field-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.print-field-row:last-child {
+    margin-bottom: 0;
+}
+
+.print-field-row input[type="checkbox"],
+.print-field-row input[type="radio"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #4cc2ff;
+    cursor: pointer;
+}
+
+.print-field-row label {
+    font-size: 12px;
+    color: #ccc;
+    cursor: pointer;
+    margin-bottom: 0;
+}
+
+.print-window-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: linear-gradient(180deg, #3e3e42 0%, #333 100%);
+    border: 1px solid #4e4e52;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    width: 100%;
+    justify-content: center;
+}
+
+.print-window-btn:hover {
+    background: linear-gradient(180deg, #4e4e52 0%, #3e3e42 100%);
+    border-color: #4cc2ff;
+}
+
+.print-window-info {
+    font-size: 11px;
+    color: #4cc2ff;
+    margin-top: 6px;
+    text-align: center;
+}
+
+.print-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 20px;
+    background-color: #252526;
+    border-top: 1px solid #3e3e42;
+    border-radius: 0 0 8px 8px;
+}
+
+.print-btn {
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.print-btn-primary {
+    background: linear-gradient(180deg, #0078d4 0%, #006cbd 100%);
+    border: 1px solid #0078d4;
+    color: #fff;
+}
+
+.print-btn-primary:hover {
+    background: linear-gradient(180deg, #1a88dc 0%, #0078d4 100%);
+    box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
+}
+
+.print-btn-secondary {
+    background: linear-gradient(180deg, #3e3e42 0%, #333 100%);
+    border: 1px solid #4e4e52;
+    color: #ccc;
+}
+
+.print-btn-secondary:hover {
+    background: linear-gradient(180deg, #4e4e52 0%, #3e3e42 100%);
+    color: #fff;
+}
+
+/* Preview Section */
+.print-preview-section {
+    background-color: #1e1e1e;
+    border: 1px solid #3e3e42;
+    border-radius: 6px;
+    padding: 14px;
+    margin-top: 16px;
+}
+
+.print-preview-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #4cc2ff;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+}
+
+.print-preview-canvas {
+    background-color: #fff;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    width: 100%;
+    aspect-ratio: 1.414; /* A4 aspect ratio */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.print-preview-canvas.landscape {
+    aspect-ratio: 1.414;
+}
+
+.print-preview-canvas.portrait {
+    aspect-ratio: 0.707;
+}
+
+.print-preview-placeholder {
+    color: #666;
+    font-size: 12px;
+}
+
+/* Scale input */
+.scale-input-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.scale-input-group input {
+    width: 60px;
+    text-align: center;
+}
+
+.scale-input-group span {
+    color: #999;
+    font-size: 12px;
+}
+
+/* Margins section */
+.print-margins {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.print-margin-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.print-margin-field label {
+    font-size: 11px;
+    color: #999;
+    min-width: 40px;
+}
+
+.print-margin-field input {
+    width: 60px;
+    padding: 4px 8px;
+    background-color: #1e1e1e;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 11px;
+    text-align: center;
+}
+
+/* Line weight section */
+.print-lineweight-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Quick Settings */
+.print-quick-settings {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.print-quick-btn {
+    flex: 1;
+    padding: 8px 12px;
+    background-color: #252526;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    color: #ccc;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+}
+
+.print-quick-btn:hover {
+    background-color: #3e3e42;
+    color: #fff;
+}
+
+.print-quick-btn.active {
+    background-color: rgba(76, 194, 255, 0.15);
+    border-color: #4cc2ff;
+    color: #4cc2ff;
+}
+
+/* Info text */
+.print-info-text {
+    font-size: 10px;
+    color: #666;
+    margin-top: 8px;
+    padding: 8px;
+    background-color: rgba(255, 204, 0, 0.1);
+    border-radius: 4px;
+    border: 1px solid rgba(255, 204, 0, 0.2);
+}
+
+.print-info-text span {
+    color: #ffcc00;
+}

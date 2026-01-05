@@ -3,9 +3,12 @@ import type { Entity, Point } from '../types/entities';
 import type { CommandType } from '../types/commands';
 import { closestPointOnEntity, rotatePoint as rotatePt, scalePoint as scalePt, translatePoint as translatePt, mirrorPoint as mirrorPt, getClosestSnapPoint, SnapPoint, GripPoint, distance2D, isEntityInBox, doesEntityIntersectBox } from '../utils/geometryUtils';
 import { trimLineEntity, trimArcEntity, trimCircleEntity, extendLineEntity, extendArcEntity } from '../utils/intersectionUtils';
-import { debounce } from '../utils/performance';
+
 import { HistoryManager } from '../utils/historyManager';
-import { calculateDimensionGeometry } from '../utils/dimensionUtils';
+import { calculateDimensionGeometry, autoDetectPoints } from '../utils/dimensionUtils';
+import { DEFAULT_DIMENSION_SETTINGS } from '../types/dimensionSettings';
+import type { Layer } from '../types/layers';
+import { DEFAULT_LAYER } from '../types/layers';
 
 interface ActiveGrip {
   entityId: number;
@@ -59,11 +62,28 @@ interface DrawingContextValue {
   switchSheet: (id: string) => void;
   renameSheet: (id: string, newName: string) => void;
 
+
+
   // File state (from active sheet)
   fileName: string;
   isModified: boolean;
   newFile: () => void;
   loadEntities: (entities: Entity[], fileName?: string) => void;
+  loadProject: (data: any) => void;
+
+  // Layer state
+  layerDialogState: { isOpen: boolean };
+  setLayerDialogState: React.Dispatch<React.SetStateAction<{ isOpen: boolean }>>;
+  layers: Layer[];
+  activeLayerId: string;
+  addLayer: (layer: Layer) => void;
+  removeLayer: (id: string) => void;
+  updateLayer: (id: string, updates: Partial<Layer>) => void;
+  setActiveLayerId: (id: string) => void;
+  activeLineType: string;
+  setActiveLineType: (type: string) => void;
+  activeLineWeight: number; // 0 means BYLAYER usually, or specifics
+  setActiveLineWeight: (weight: number) => void;
 
   // Scale & Units
   baseUnit: DrawingUnit; // Proje baz birimi (değerler bu birimde saklanır)
@@ -109,11 +129,23 @@ interface DrawingContextValue {
   clearSelection: () => void;
   selectAll: () => void;
   selectionBox: SelectionBox | null;
+  hoveredEntityId: number | null;
+  setHoveredEntityId: (id: number | null) => void;
 
   // Snapping
   osnapEnabled: boolean;
   toggleOsnap: () => void;
   activeSnap: SnapPoint | null;
+
+  // Grid & Ortho
+  gridEnabled: boolean;
+  toggleGrid: () => void;
+  orthoEnabled: boolean;
+  toggleOrtho: () => void;
+  polarTrackingEnabled: boolean;
+  togglePolarTracking: () => void;
+  polarTrackingAngle: number;
+  setPolarTrackingAngle: (angle: number) => void;
 
   // Grips
   activeGrip: ActiveGrip | null;
@@ -149,7 +181,8 @@ interface DrawingContextValue {
   // Text Dialog State
   textDialogState: {
     isOpen: boolean;
-    mode: 'TEXT' | 'MTEXT';
+    mode?: 'TEXT' | 'MTEXT';
+    initialText?: string;
     initialValues?: {
       text?: string;
       height?: number;
@@ -160,10 +193,13 @@ interface DrawingContextValue {
       color?: string;
     };
     callback?: (data: any) => void;
+    onSubmit?: (text: string) => void;
+    onCancel?: () => void;
   };
   setTextDialogState: React.Dispatch<React.SetStateAction<{
     isOpen: boolean;
-    mode: 'TEXT' | 'MTEXT';
+    mode?: 'TEXT' | 'MTEXT';
+    initialText?: string;
     initialValues?: {
       text?: string;
       height?: number;
@@ -174,6 +210,8 @@ interface DrawingContextValue {
       color?: string;
     };
     callback?: (data: any) => void;
+    onSubmit?: (text: string) => void;
+    onCancel?: () => void;
   }>>;
 
   // Table Dialog State
@@ -189,6 +227,41 @@ interface DrawingContextValue {
     callback?: (data: any) => void;
     editMode?: boolean;
   }>>;
+
+  // Dimension Settings Dialog State
+  dimensionSettingsDialogState: {
+    isOpen: boolean;
+  };
+  setDimensionSettingsDialogState: React.Dispatch<React.SetStateAction<{
+    isOpen: boolean;
+  }>>;
+
+  // Dimension Edit Dialog State
+  dimensionEditDialogState: {
+    isOpen: boolean;
+    entityId?: number;
+  };
+  setDimensionEditDialogState: React.Dispatch<React.SetStateAction<{
+    isOpen: boolean;
+    entityId?: number;
+  }>>;
+
+  // Print System State
+  printDialogState: { isOpen: boolean };
+  setPrintDialogState: React.Dispatch<React.SetStateAction<{ isOpen: boolean }>>;
+
+  printWindowMode: boolean;
+  startPrintWindow: () => void;
+  finishPrintWindow: () => void;
+  printWindowBox: { start: Point; end: Point } | null;
+  setPrintWindowBox: React.Dispatch<React.SetStateAction<{ start: Point; end: Point } | null>>;
+  applyPrintWindow: (start: Point, end: Point) => void;
+  // Print Preview
+  printPreviewMode: boolean;
+  startPrintPreview: () => void;
+  finishPrintPreview: () => void;
+  // Helper for print
+  getEntitiesBoundingBox: () => { min: Point; max: Point } | null;
 }
 
 const DrawingContext = createContext<DrawingContextValue | null>(null);
@@ -209,7 +282,8 @@ interface DrawingProviderProps {
 const STORAGE_KEY = 'cad_app_data';
 
 // Load from localStorage
-const loadFromStorage = (): { sheets: DrawingSheet[]; activeSheetId: string } | null => {
+// Load from localStorage
+const loadFromStorage = (): { sheets: DrawingSheet[]; activeSheetId: string; layers: Layer[]; activeLayerId: string } | null => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -219,6 +293,8 @@ const loadFromStorage = (): { sheets: DrawingSheet[]; activeSheetId: string } | 
         return {
           sheets: data.sheets,
           activeSheetId: data.activeSheetId || data.sheets[0]?.id || '',
+          layers: data.layers || [DEFAULT_LAYER],
+          activeLayerId: data.activeLayerId || DEFAULT_LAYER.id,
         };
       }
       // Eski format (tek entities) - geriye dönük uyumluluk
@@ -234,6 +310,8 @@ const loadFromStorage = (): { sheets: DrawingSheet[]; activeSheetId: string } | 
             drawingScale: data.drawingScale || '1:1',
           }],
           activeSheetId: '',
+          layers: [DEFAULT_LAYER],
+          activeLayerId: DEFAULT_LAYER.id,
         };
       }
     }
@@ -286,6 +364,42 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     editMode?: boolean;
   }>({ isOpen: false });
 
+  // Dimension Settings Dialog State
+  const [dimensionSettingsDialogState, setDimensionSettingsDialogState] = useState<{
+    isOpen: boolean;
+  }>({ isOpen: false });
+
+  // Dimension Edit Dialog State
+  const [dimensionEditDialogState, setDimensionEditDialogState] = useState<{
+    isOpen: boolean;
+    entityId?: number;
+  }>({ isOpen: false });
+
+  // Print System State
+  const [printDialogState, setPrintDialogState] = useState<{
+    isOpen: boolean;
+  }>({ isOpen: false });
+
+  const [printWindowMode, setPrintWindowMode] = useState(false);
+  const [printWindowBox, setPrintWindowBox] = useState<{ start: Point; end: Point } | null>(null);
+
+  const startPrintWindow = useCallback(() => {
+    setPrintWindowMode(true);
+    setPrintDialogState({ isOpen: false }); // Hide dialog during selection
+    setPrintWindowBox(null);
+    cancelCommand();
+  }, []);
+
+  const finishPrintWindow = useCallback(() => {
+    setPrintWindowMode(false);
+    setPrintDialogState({ isOpen: true }); // Show dialog after selection
+  }, []);
+
+  const applyPrintWindow = useCallback((start: Point, end: Point) => {
+    setPrintWindowBox({ start, end });
+    finishPrintWindow();
+  }, [finishPrintWindow]);
+
   // Get active sheet
   const activeSheet = useMemo(() => {
     return sheets.find(s => s.id === activeSheetId) || sheets[0];
@@ -321,6 +435,8 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     setSheets(prev => [...prev, newSheet]);
     setActiveSheetId(newSheet.id);
   }, [sheets.length, generateSheetId]);
+
+
 
   const removeSheet = useCallback((id: string) => {
     if (sheets.length <= 1) {
@@ -401,6 +517,50 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   const [osnapEnabled, setOsnapEnabled] = useState(true);
   const [activeSnap, setActiveSnap] = useState<SnapPoint | null>(null);
 
+  const [gridEnabled, setGridEnabled] = useState(true);
+  const toggleGrid = useCallback(() => setGridEnabled(prev => !prev), []);
+  const [orthoEnabled, setOrthoEnabled] = useState(false);
+  const toggleOrtho = useCallback(() => setOrthoEnabled(prev => !prev), []);
+  const [polarTrackingEnabled, setPolarTrackingEnabled] = useState(false);
+  const togglePolarTracking = useCallback(() => setPolarTrackingEnabled(prev => !prev), []);
+  const [polarTrackingAngle, setPolarTrackingAngle] = useState(45); // Default 45 degrees
+
+  // Layer Dialog State
+  const [layerDialogState, setLayerDialogState] = useState<{ isOpen: boolean }>({ isOpen: false });
+
+  // Layer State
+  const [layers, setLayers] = useState<Layer[]>(() => {
+    if (initialData && initialData.layers) return initialData.layers;
+    return [DEFAULT_LAYER];
+  });
+  const [activeLayerId, setActiveLayerId] = useState<string>(() => {
+    if (initialData && initialData.activeLayerId) return initialData.activeLayerId;
+    return DEFAULT_LAYER.id;
+  });
+
+  const [activeLineType, setActiveLineType] = useState<string>('continuous'); // Default continuous or BYLAYER logic
+  const [activeLineWeight, setActiveLineWeight] = useState<number>(0); // 0 often used for Default/ByLayer
+
+
+  const addLayer = useCallback((layer: Layer) => {
+    setLayers(prev => [...prev, layer]);
+  }, []);
+
+  const removeLayer = useCallback((id: string) => {
+    if (id === DEFAULT_LAYER.id) {
+      console.warn("Cannot delete default layer '0'");
+      return;
+    }
+    setLayers(prev => prev.filter(l => l.id !== id));
+    if (activeLayerId === id) {
+      setActiveLayerId(DEFAULT_LAYER.id);
+    }
+  }, [activeLayerId]);
+
+  const updateLayer = useCallback((id: string, updates: Partial<Layer>) => {
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
+  }, []);
+
   // Zoom triggers - bu değerler arttığında Scene bileşeni kamerayı günceller
   const [zoomToFitTrigger, setZoomToFitTrigger] = useState(0);
   const triggerZoomToFit = useCallback(() => {
@@ -424,7 +584,8 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   // Dialog State
   const [textDialogState, setTextDialogState] = useState<{
     isOpen: boolean;
-    mode: 'TEXT' | 'MTEXT';
+    mode?: 'TEXT' | 'MTEXT';
+    initialText?: string;
     initialValues?: {
       text?: string;
       height?: number;
@@ -435,6 +596,8 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       color?: string;
     };
     callback?: (data: any) => void;
+    onSubmit?: (text: string) => void;
+    onCancel?: () => void;
   }>({ isOpen: false, mode: 'TEXT' });
   // Table Dialog State
 
@@ -458,14 +621,17 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   }, []);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [hoveredEntityId, setHoveredEntityId] = useState<number | null>(null);
 
-  // Auto-save sheets to localStorage (debounced)
+  // Auto-save sheets and layers to localStorage (debounced)
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
           sheets,
           activeSheetId,
+          layers,
+          activeLayerId,
         }));
       } catch (e) {
         console.warn('Auto-save failed:', e);
@@ -473,7 +639,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     }, 1000); // 1 saniye debounce
 
     return () => clearTimeout(timeoutId);
-  }, [sheets, activeSheetId]);
+  }, [sheets, activeSheetId, layers, activeLayerId]);
 
   // History manager
   const historyManager = useRef<HistoryManager>(new HistoryManager(100));
@@ -527,15 +693,51 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
 
   // Load entities from file
   const loadEntities = useCallback((newEntities: Entity[], newFileName?: string) => {
-    setEntities(newEntities);
+    // Legacy support: update active sheet
+    updateActiveSheet({
+      entities: newEntities,
+      name: newFileName || fileName
+    });
+    // Reset selection and command state
     setSelectedIds(new Set());
-    if (newFileName) {
-      setFileName(newFileName);
-    }
-    setIsModified(false);
+    setCommandState({});
+    setActiveCommand(null);
+    setStep(0);
+    setTempPoints([]);
+
+    // Reset history
     historyManager.current = new HistoryManager(100);
-    cancelCommand();
-  }, []);
+  }, [updateActiveSheet, fileName]);
+
+  // Load project (multi-sheet support)
+  const loadProject = useCallback((data: any) => {
+    if (!data) return;
+
+    if (data.sheets && Array.isArray(data.sheets)) {
+      // Multi-sheet format
+      setSheets(data.sheets);
+
+      // Set active sheet
+      if (data.activeSheetId && data.sheets.some((s: any) => s.id === data.activeSheetId)) {
+        setActiveSheetId(data.activeSheetId);
+      } else if (data.sheets.length > 0) {
+        setActiveSheetId(data.sheets[0].id);
+      }
+    } else if (data.entities && Array.isArray(data.entities)) {
+      // Legacy format (single sheet)
+      loadEntities(data.entities, data.fileName || 'Untitled.dxf');
+    }
+
+    // Reset common state
+    setCommandState({});
+    setActiveCommand(null);
+    setStep(0);
+    setTempPoints([]);
+    setSelectedIds(new Set());
+    setSelectedIds(new Set());
+    // setHistory and setRedoStack are not available, handled by resetting historyManager
+    historyManager.current = new HistoryManager(100);
+  }, [loadEntities]);
 
   // Unique ID counter - crypto.randomUUID kullan (daha güvenilir)
   const idCounterRef = useRef(0);
@@ -553,6 +755,10 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       id: generateUniqueId(),
       visible: entity.visible ?? true,
       locked: entity.locked ?? false,
+      layer: entity.layer || activeLayerId, // Use active layer if not provided
+      color: entity.color || 'BYLAYER', // Default to BYLAYER
+      lineType: entity.lineType || activeLineType, // Default to active line type
+      lineWeight: entity.lineWeight ?? activeLineWeight, // Default to active line weight
     } as Entity;
     setEntities(prev => [...prev, newEntity]);
     setIsModified(true);
@@ -572,33 +778,24 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   // Delete entities
   const deleteEntities = useCallback((ids: Set<number>) => {
     captureBeforeState();
-    setEntities(prev => prev.filter(ent => !ids.has(ent.id)));
+    // Filter out locked entities
+    const lockedLayerIds = new Set(layers.filter(l => l.locked).map(l => l.id));
+    setEntities(prev => prev.filter(ent => {
+      if (ids.has(ent.id)) {
+        // If trying to delete, check if locked
+        if (lockedLayerIds.has(ent.layer)) {
+          console.warn(`Cannot delete entity on locked layer ${ent.layer}`);
+          return true; // Keep it
+        }
+        return false; // Delete it
+      }
+      return true; // Keep others
+    }));
     setIsModified(true);
     createHistoryItem('ERASE' as CommandType);
   }, [captureBeforeState, createHistoryItem]);
 
-  // Debounced localStorage save (500ms delay)
-  const debouncedSave = useMemo(
-    () => debounce((data: any) => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      } catch (e) {
-        console.warn('Failed to save to localStorage:', e);
-      }
-    }, 500),
-    []
-  );
 
-  // Save to localStorage when entities or fileName change (debounced)
-  useEffect(() => {
-    debouncedSave({
-      entities,
-      fileName,
-      baseUnit,
-      drawingUnit,
-      drawingScale,
-    });
-  }, [entities, fileName, baseUnit, drawingUnit, drawingScale, debouncedSave]);
 
   // Delete key handler
   React.useEffect(() => {
@@ -630,8 +827,67 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     if (['LINE', 'CIRCLE', 'POLYLINE', 'RECTANGLE', 'POLYGON', 'ARC', 'SPLINE', 'ELLIPSE', 'POINT', 'RAY', 'XLINE', 'DONUT', 'TEXT', 'MTEXT', 'DIMLINEAR', 'DIMALIGNED', 'DIMANGULAR', 'DIMRADIUS', 'DIMDIAMETER', 'HATCH'].includes(cmd)) {
       setSelectedIds(new Set());
     }
+
+    // DIMCONTINUE: Ardışık ölçü - önceden ölçü gerekmez
+    // Step 1: İlk nokta, Step 2: İkinci nokta, Step 3: Ölçü pozisyonu, Step 4+: Devam noktaları
+    if (cmd === 'DIMCONTINUE') {
+      // Önceden bir ölçü varsa ondan devam et
+      const lastDim = [...entities]
+        .reverse()
+        .find(e => e.type === 'DIMENSION' && (
+          (e as any).dimType === 'DIMLINEAR' ||
+          (e as any).dimType === 'DIMALIGNED'
+        ));
+
+      if (lastDim) {
+        // Mevcut ölçüden devam et
+        setCommandState({
+          lastDimension: lastDim,
+          basePoint: (lastDim as any).end,
+          dimLinePosition: (lastDim as any).dimLinePosition,
+          hasPreviousDim: true
+        });
+        setTempPoints([(lastDim as any).end]);
+        setStep(4); // Direkt devam moduna geç
+        console.log('DIMCONTINUE: Found last dimension, continuing from end point');
+      } else {
+        // Önceden ölçü yok - sıfırdan başla
+        setCommandState({ hasPreviousDim: false });
+        console.log('DIMCONTINUE: No previous dimension, starting fresh');
+        // Step 1'de kalır - ilk nokta seçilecek
+      }
+    }
+
+    // DIMBASELINE: Taban ölçü - önceden ölçü gerekmez
+    if (cmd === 'DIMBASELINE') {
+      const lastDim = [...entities]
+        .reverse()
+        .find(e => e.type === 'DIMENSION' && (
+          (e as any).dimType === 'DIMLINEAR' ||
+          (e as any).dimType === 'DIMALIGNED'
+        ));
+
+      if (lastDim) {
+        setCommandState({
+          baselineDimension: lastDim,
+          basePoint: (lastDim as any).start,
+          dimLinePosition: (lastDim as any).dimLinePosition,
+          offsetMultiplier: 1,
+          hasPreviousDim: true
+        });
+        setTempPoints([(lastDim as any).start]);
+        setStep(4); // Direkt devam moduna geç
+        console.log('DIMBASELINE: Found last dimension, ready for next point');
+      } else {
+        // Önceden ölçü yok - sıfırdan başla
+        setCommandState({ hasPreviousDim: false, offsetMultiplier: 0 });
+        console.log('DIMBASELINE: No previous dimension, starting fresh');
+        // Step 1'de kalır - ilk nokta seçilecek
+      }
+    }
+
     console.log(`Command started: ${cmd}`);
-  }, []);
+  }, [entities]);
 
   // Cancel command
   const cancelCommand = useCallback(() => {
@@ -642,8 +898,8 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         type: 'LWPOLYLINE',
         vertices: tempPoints,
         closed: false,
-        color: '#fff',
-        layer: '0',
+        color: 'BYLAYER',
+        layer: activeLayerId,
       });
       console.log('POLYLINE saved before cancel');
     } else if (activeCommand === 'SPLINE' && tempPoints.length >= 2) {
@@ -652,8 +908,8 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         controlPoints: tempPoints,
         degree: Math.min(3, tempPoints.length - 1),
         closed: false,
-        color: '#fff',
-        layer: '0',
+        color: 'BYLAYER',
+        layer: activeLayerId,
       });
       console.log('SPLINE saved before cancel');
     }
@@ -663,13 +919,22 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     setTempPoints([]);
     setCommandState({});
     console.log('Command cancelled');
-  }, [activeCommand, tempPoints, addEntity]);
+  }, [activeCommand, tempPoints, addEntity, activeLayerId]);
 
   // Toggle selection
   const toggleSelection = useCallback((id: number) => {
-    if (activeCommand && !['MOVE', 'COPY', 'ROTATE', 'SCALE', 'MIRROR', 'ERASE', 'OFFSET'].includes(activeCommand)) {
+    if (activeCommand && !['MOVE', 'COPY', 'ROTATE', 'SCALE', 'MIRROR', 'ERASE', 'OFFSET', 'EXPLODE', 'TRIM', 'EXTEND', 'JOIN', 'FILLET', 'CHAMFER'].includes(activeCommand)) {
       return;
     }
+    const ent = entities.find(e => e.id === id);
+    if (!ent) return;
+
+    const layer = layers.find(l => l.id === ent.layer);
+    if (layer && layer.locked) {
+      console.log(`Cannot select entity on locked layer ${layer.name}`);
+      return;
+    }
+
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -696,12 +961,12 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         type: 'LWPOLYLINE',
         vertices: tempPoints,
         closed: false,
-        color: '#ffffff',
-        layer: '0',
+        color: 'BYLAYER',
+        layer: activeLayerId,
       });
       cancelCommand();
     }
-  }, [activeCommand, tempPoints, addEntity, cancelCommand]);
+  }, [activeCommand, tempPoints, addEntity, cancelCommand, activeLayerId]);
 
   // Undo
   const undo = useCallback(() => {
@@ -844,7 +1109,11 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           }
 
           if (match) {
-            newSelectedIds.add(ent.id);
+            // Check for locked layer
+            const layer = layers.find(l => l.id === ent.layer);
+            if (!layer || !layer.locked) {
+              newSelectedIds.add(ent.id);
+            }
           }
         });
         setSelectedIds(newSelectedIds);
@@ -866,6 +1135,12 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   const activateGrip = useCallback((entityId: number, grip: GripPoint) => {
     const ent = entities.find(e => e.id === entityId);
     if (!ent) return;
+
+    const layer = layers.find(l => l.id === ent.layer);
+    if (layer && layer.locked) {
+      return;
+    }
+
     captureBeforeState();
     setActiveGrip({
       entityId,
@@ -993,8 +1268,8 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
 
     let point = (osnapEnabled && activeSnap) ? activeSnap.point : rawPoint;
 
-    // Ortho constraint when Shift is held during LINE/POLYLINE
-    if (shiftKeyPressed && (activeCommand === 'LINE' || activeCommand === 'POLYLINE') && tempPoints.length > 0) {
+    // Ortho constraint when Shift is held or orthoEnabled during LINE/POLYLINE
+    if ((shiftKeyPressed || orthoEnabled) && (activeCommand === 'LINE' || activeCommand === 'POLYLINE') && tempPoints.length > 0) {
       const lastPoint = tempPoints[tempPoints.length - 1];
       const dx = point[0] - lastPoint[0];
       const dy = point[1] - lastPoint[1];
@@ -1006,6 +1281,34 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       } else {
         // Vertical
         point = [lastPoint[0], point[1], 0];
+      }
+    }
+    // Polar Tracking constraint
+    else if (polarTrackingEnabled && (activeCommand === 'LINE' || activeCommand === 'POLYLINE') && tempPoints.length > 0) {
+      const lastPoint = tempPoints[tempPoints.length - 1];
+      const dx = point[0] - lastPoint[0];
+      const dy = point[1] - lastPoint[1];
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist > 0.001) {
+        // Get current angle in degrees
+        let currentAngle = Math.atan2(dy, dx) * 180 / Math.PI;
+        if (currentAngle < 0) currentAngle += 360;
+
+        // Snap to nearest polar angle increment
+        const increment = polarTrackingAngle;
+        const snappedAngle = Math.round(currentAngle / increment) * increment;
+        const snappedAngleRad = snappedAngle * Math.PI / 180;
+
+        // Check if we're close enough to snap (within 5 degrees)
+        const angleDiff = Math.abs(currentAngle - snappedAngle);
+        if (angleDiff < 5 || angleDiff > (360 - 5)) {
+          point = [
+            lastPoint[0] + Math.cos(snappedAngleRad) * dist,
+            lastPoint[1] + Math.sin(snappedAngleRad) * dist,
+            0
+          ];
+        }
       }
     }
 
@@ -1062,8 +1365,21 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             return;
           }
         }
-        // Normal davranış - noktayı ekle
-        setTempPoints(prev => [...prev, point]);
+
+        // AutoCAD uyumlu LINE davranışı:
+        // Her ikinci noktada bir çizgi oluştur
+        const lastPoint = tempPoints[tempPoints.length - 1];
+        addEntity({
+          type: 'LINE',
+          start: lastPoint,
+          end: point,
+          color: '#fff',
+          layer: '0',
+        });
+
+        // Son noktayı başlangıç noktası yap, devam et
+        setTempPoints([point]);
+        // Step 2'de kal - bir sonraki çizgi için hazır
       }
     } else if (activeCommand === 'CIRCLE') {
       if (step === 1) {
@@ -1103,6 +1419,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         // Komut aktif kalsın - ESC ile çıkılır
         setStep(1);
         setTempPoints([]);
+        setCommandState({});
       }
     } else if (activeCommand === 'POLYLINE') {
       if (step === 1) {
@@ -1118,9 +1435,15 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       } else if (step === 2) {
         const p1 = tempPoints[0];
         const p2 = point;
+        // Use consistent Z=0 for all vertices
         addEntity({
           type: 'LWPOLYLINE',
-          vertices: [p1, [p2[0], p1[1], 0], p2, [p1[0], p2[1], 0]],
+          vertices: [
+            [p1[0], p1[1], 0] as Point,
+            [p2[0], p1[1], 0] as Point,
+            [p2[0], p2[1], 0] as Point,
+            [p1[0], p2[1], 0] as Point
+          ],
           closed: true,
           color: '#fff',
           layer: '0',
@@ -1216,7 +1539,9 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           color: '#fff',
           layer: '0',
         });
-        setTempPoints([point]);
+        // Reset to step 1 for next ray with new origin
+        setTempPoints([]);
+        setStep(1);
         // Stay in RAY mode for multiple rays
       }
     } else if (activeCommand === 'XLINE') {
@@ -1237,7 +1562,9 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           color: '#fff',
           layer: '0',
         });
-        setTempPoints([point]);
+        // Reset to step 1 for next xline with new origin
+        setTempPoints([]);
+        setStep(1);
         // Stay in XLINE mode for multiple xlines
       }
     } else if (activeCommand === 'DONUT') {
@@ -1436,6 +1763,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       }
       // Step 2: Second point (Displacement and Copy)
       if (step === 2) {
+        captureBeforeState();
         const { base, selectedEntities } = commandState;
         const dx = point[0] - base[0];
         const dy = point[1] - base[1];
@@ -1687,7 +2015,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           if (ent.type === 'LINE') {
             (newEnt as any).start = mirrorPt((ent as any).start, p1[0], p1[1], p2[0], p2[1]);
             (newEnt as any).end = mirrorPt((ent as any).end, p1[0], p1[1], p2[0], p2[1]);
-          } else if (ent.type === 'CIRCLE') {
+          } else if (ent.type === 'CIRCLE' || ent.type === 'DONUT') {
             (newEnt as any).center = mirrorPt((ent as any).center, p1[0], p1[1], p2[0], p2[1]);
           } else if (ent.type === 'ARC') {
             (newEnt as any).center = mirrorPt((ent as any).center, p1[0], p1[1], p2[0], p2[1]);
@@ -1738,11 +2066,21 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         } else if (ent.type === 'ELLIPSE') {
           const pts: Point[] = [];
           const segs = 64;
+          const cx = (ent as any).center[0];
+          const cy = (ent as any).center[1];
+          const rx = (ent as any).rx;
+          const ry = (ent as any).ry;
+          const rotation = (ent as any).rotation || 0;
+          const cosR = Math.cos(rotation);
+          const sinR = Math.sin(rotation);
           for (let i = 0; i < segs; i++) {
             const t = (i / segs) * Math.PI * 2;
+            const cosT = Math.cos(t);
+            const sinT = Math.sin(t);
+            // Apply rotation to ellipse points
             pts.push([
-              (ent as any).center[0] + Math.cos(t) * (ent as any).rx,
-              (ent as any).center[1] + Math.sin(t) * (ent as any).ry,
+              cx + cosR * rx * cosT - sinR * ry * sinT,
+              cy + sinR * rx * cosT + cosR * ry * sinT,
               0
             ]);
           }
@@ -1780,7 +2118,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         entities.forEach(ent => {
           if (!ent.visible) return;
           if (ent.type !== 'LWPOLYLINE' && ent.type !== 'CIRCLE' &&
-              ent.type !== 'ELLIPSE' && ent.type !== 'SPLINE') {
+            ent.type !== 'ELLIPSE' && ent.type !== 'SPLINE') {
             return;
           }
 
@@ -1813,7 +2151,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         entities.forEach(ent => {
           if (!ent.visible) return;
           if (ent.type !== 'LWPOLYLINE' && ent.type !== 'CIRCLE' &&
-              ent.type !== 'ELLIPSE' && ent.type !== 'SPLINE') {
+            ent.type !== 'ELLIPSE' && ent.type !== 'SPLINE') {
             return;
           }
 
@@ -2032,17 +2370,18 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         if (targetEntity) {
           captureBeforeState();
           let newEntities: Entity[] = [];
+          const target = targetEntity as Entity;
 
-          if (targetEntity.type === 'LINE') {
-            newEntities = trimLineEntity(targetEntity, point, cuttingEdges);
-          } else if (targetEntity.type === 'ARC') {
-            newEntities = trimArcEntity(targetEntity, point, cuttingEdges);
-          } else if (targetEntity.type === 'CIRCLE') {
-            newEntities = trimCircleEntity(targetEntity, point, cuttingEdges);
+          if (target.type === 'LINE') {
+            newEntities = trimLineEntity(target, point, cuttingEdges);
+          } else if (target.type === 'ARC') {
+            newEntities = trimArcEntity(target, point, cuttingEdges);
+          } else if (target.type === 'CIRCLE') {
+            newEntities = trimCircleEntity(target, point, cuttingEdges);
           }
 
           // Delete original entity
-          deleteEntities(new Set([targetEntity.id]));
+          deleteEntities(new Set([target.id]));
 
           // Add new trimmed entities
           newEntities.forEach(ent => addEntity(ent));
@@ -2101,15 +2440,16 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         if (targetEntity) {
           captureBeforeState();
           let extendedEntity: Entity | null = null;
+          const target = targetEntity as Entity;
 
-          if (targetEntity.type === 'LINE') {
-            extendedEntity = extendLineEntity(targetEntity, point, boundaries);
-          } else if (targetEntity.type === 'ARC') {
-            extendedEntity = extendArcEntity(targetEntity, point, boundaries);
+          if (target.type === 'LINE') {
+            extendedEntity = extendLineEntity(target, point, boundaries);
+          } else if (target.type === 'ARC') {
+            extendedEntity = extendArcEntity(target, point, boundaries);
           }
 
-          if (extendedEntity && extendedEntity !== targetEntity) {
-            updateEntity(targetEntity.id, extendedEntity);
+          if (extendedEntity && extendedEntity !== target) {
+            updateEntity(target.id, extendedEntity);
             createHistoryItem('EXTEND' as CommandType);
           }
         }
@@ -2334,10 +2674,8 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
               } as Entity);
             }
             toDelete.push(id);
-          } else if (ent.type === 'RECTANGLE') {
-            // Explode rectangle into 4 lines (if RECTANGLE type exists separately)
-            // Currently rectangles are stored as LWPOLYLINE, so this may not be needed
           }
+          // Note: RECTANGLE is stored as LWPOLYLINE, handled above
         });
 
         // Delete original entities
@@ -2352,6 +2690,296 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
 
         cancelCommand();
         clearSelection();
+      }
+    } else if ((activeCommand as string) === 'BREAK') {
+      // BREAK: Break an entity at one or two points
+      // Step 1: Select entity
+      // Step 2: First break point
+      // Step 3: Second break point (or same as first for single point break)
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE' && ent.type !== 'LWPOLYLINE' && ent.type !== 'CIRCLE' && ent.type !== 'ARC') return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const selectedEntity = entities.find(e => e.id === closestId);
+          if (selectedEntity) {
+            setCommandState({ selectedEntity, firstPoint: point });
+            setTempPoints([point]);
+            setStep(2);
+          }
+        }
+      } else if (step === 2) {
+        // Second break point
+        const { selectedEntity, firstPoint } = commandState;
+        if (!selectedEntity) {
+          cancelCommand();
+          return;
+        }
+
+        captureBeforeState();
+        const secondPoint = point;
+
+        if (selectedEntity.type === 'LINE') {
+          const line = selectedEntity as any;
+          const start = line.start as Point;
+          const end = line.end as Point;
+
+          // Project both break points onto the line
+          const dx = end[0] - start[0];
+          const dy = end[1] - start[1];
+          const len = Math.sqrt(dx * dx + dy * dy);
+          if (len < 0.001) {
+            cancelCommand();
+            return;
+          }
+
+          const ux = dx / len;
+          const uy = dy / len;
+
+          // Calculate t values for both points (0 = start, 1 = end)
+          const t1 = ((firstPoint[0] - start[0]) * ux + (firstPoint[1] - start[1]) * uy) / len;
+          const t2 = ((secondPoint[0] - start[0]) * ux + (secondPoint[1] - start[1]) * uy) / len;
+
+          const tMin = Math.max(0, Math.min(t1, t2));
+          const tMax = Math.min(1, Math.max(t1, t2));
+
+          // Create two line segments (before break and after break)
+          const toDelete = [selectedEntity.id];
+          const toAdd: Entity[] = [];
+
+          if (tMin > 0.01) {
+            // First segment: start to break point 1
+            const breakPoint1: Point = [
+              start[0] + tMin * dx,
+              start[1] + tMin * dy,
+              0
+            ];
+            toAdd.push({
+              type: 'LINE',
+              start: start,
+              end: breakPoint1,
+              color: line.color,
+              layer: line.layer,
+              id: Date.now() + Math.random(),
+            } as Entity);
+          }
+
+          if (tMax < 0.99) {
+            // Second segment: break point 2 to end
+            const breakPoint2: Point = [
+              start[0] + tMax * dx,
+              start[1] + tMax * dy,
+              0
+            ];
+            toAdd.push({
+              type: 'LINE',
+              start: breakPoint2,
+              end: end,
+              color: line.color,
+              layer: line.layer,
+              id: Date.now() + Math.random() + 0.001,
+            } as Entity);
+          }
+
+          deleteEntities(new Set(toDelete));
+          toAdd.forEach(ent => addEntity(ent));
+          createHistoryItem('BREAK' as CommandType);
+        } else if (selectedEntity.type === 'CIRCLE') {
+          // Breaking a circle creates an arc
+          const circle = selectedEntity as any;
+          const center = circle.center as Point;
+          const radius = circle.radius as number;
+
+          // Calculate angles for break points
+          const angle1 = Math.atan2(firstPoint[1] - center[1], firstPoint[0] - center[0]);
+          const angle2 = Math.atan2(secondPoint[1] - center[1], secondPoint[0] - center[0]);
+
+          deleteEntities(new Set([selectedEntity.id]));
+          addEntity({
+            type: 'ARC',
+            center: center,
+            radius: radius,
+            startAngle: angle2,
+            endAngle: angle1,
+            color: circle.color,
+            layer: circle.layer,
+            id: Date.now() + Math.random(),
+          } as Entity);
+          createHistoryItem('BREAK' as CommandType);
+        } else if (selectedEntity.type === 'ARC') {
+          // Breaking an arc creates two arcs
+          const arc = selectedEntity as any;
+          const center = arc.center as Point;
+          const radius = arc.radius as number;
+
+          const angle1 = Math.atan2(firstPoint[1] - center[1], firstPoint[0] - center[0]);
+          const angle2 = Math.atan2(secondPoint[1] - center[1], secondPoint[0] - center[0]);
+
+          // Normalize angles within arc range
+          let startAngle = arc.startAngle;
+          let endAngle = arc.endAngle;
+
+          const toDelete = [selectedEntity.id];
+          const toAdd: Entity[] = [];
+
+          // First arc: original start to break point 1
+          toAdd.push({
+            type: 'ARC',
+            center: center,
+            radius: radius,
+            startAngle: startAngle,
+            endAngle: Math.min(angle1, angle2),
+            color: arc.color,
+            layer: arc.layer,
+            id: Date.now() + Math.random(),
+          } as Entity);
+
+          // Second arc: break point 2 to original end
+          toAdd.push({
+            type: 'ARC',
+            center: center,
+            radius: radius,
+            startAngle: Math.max(angle1, angle2),
+            endAngle: endAngle,
+            color: arc.color,
+            layer: arc.layer,
+            id: Date.now() + Math.random() + 0.001,
+          } as Entity);
+
+          deleteEntities(new Set(toDelete));
+          toAdd.forEach(ent => addEntity(ent));
+          createHistoryItem('BREAK' as CommandType);
+        }
+
+        cancelCommand();
+        setCommandState({});
+        setTempPoints([]);
+      }
+    } else if ((activeCommand as string) === 'JOIN') {
+      // JOIN: Join collinear lines or arcs into a polyline
+      // Step 1: Select first entity
+      // Step 2: Select additional entities to join (Enter to finish)
+      if (step === 1) {
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE' && ent.type !== 'ARC' && ent.type !== 'LWPOLYLINE') return;
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          const firstEntity = entities.find(e => e.id === closestId);
+          if (firstEntity) {
+            setSelectedIds(new Set([closestId]));
+            setCommandState({ joinEntities: [closestId] });
+            setStep(2);
+          }
+        }
+      } else if (step === 2) {
+        // Select additional entities
+        let minD = Infinity;
+        let closestId: number | null = null;
+        const SELECT_THRESHOLD = 5.0;
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type !== 'LINE' && ent.type !== 'ARC' && ent.type !== 'LWPOLYLINE') return;
+          if (selectedIds.has(ent.id)) return; // Already selected
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < SELECT_THRESHOLD && d < minD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+        if (closestId !== null) {
+          setSelectedIds(prev => new Set([...prev, closestId!]));
+          setCommandState(prev => ({
+            ...prev,
+            joinEntities: [...(prev.joinEntities || []), closestId]
+          }));
+        }
+      }
+    } else if (activeCommand === 'BOUNDARY') {
+      // BOUNDARY: Create a boundary polyline from closed area
+      // Step 1: Pick internal point
+      if (step === 1) {
+        // Find closed boundary at the clicked point
+        const internalPoint = point;
+
+        // Collect all potential boundary entities
+        const boundaryEntities = entities.filter(ent =>
+          ent.visible !== false &&
+          (ent.type === 'LINE' || ent.type === 'LWPOLYLINE' || ent.type === 'CIRCLE' || ent.type === 'ARC')
+        );
+
+        // Simple boundary detection: find the closest closed polyline containing the point
+        let foundBoundary: Point[] | null = null;
+
+        for (const ent of boundaryEntities) {
+          if (ent.type === 'LWPOLYLINE' && (ent as any).closed) {
+            const vertices = (ent as any).vertices as Point[];
+            // Check if point is inside this polyline
+            let inside = false;
+            for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+              const xi = vertices[i][0], yi = vertices[i][1];
+              const xj = vertices[j][0], yj = vertices[j][1];
+
+              if (((yi > internalPoint[1]) !== (yj > internalPoint[1])) &&
+                (internalPoint[0] < (xj - xi) * (internalPoint[1] - yi) / (yj - yi) + xi)) {
+                inside = !inside;
+              }
+            }
+            if (inside) {
+              foundBoundary = [...vertices];
+              break;
+            }
+          } else if (ent.type === 'CIRCLE') {
+            const circle = ent as any;
+            const dist = Math.hypot(internalPoint[0] - circle.center[0], internalPoint[1] - circle.center[1]);
+            if (dist < circle.radius) {
+              // Create boundary vertices from circle
+              const numPoints = 36;
+              foundBoundary = [];
+              for (let i = 0; i < numPoints; i++) {
+                const angle = (i / numPoints) * Math.PI * 2;
+                foundBoundary.push([
+                  circle.center[0] + Math.cos(angle) * circle.radius,
+                  circle.center[1] + Math.sin(angle) * circle.radius,
+                  0
+                ]);
+              }
+              break;
+            }
+          }
+        }
+
+        if (foundBoundary) {
+          addEntity({
+            type: 'LWPOLYLINE',
+            vertices: foundBoundary,
+            closed: true,
+            color: '#00ff00',
+            layer: '0',
+            id: Date.now() + Math.random(),
+          } as Entity);
+          createHistoryItem('BOUNDARY' as CommandType);
+        }
+
+        // Stay in command for multiple boundaries
+        setStep(1);
       }
     } else if (activeCommand === 'FILLET') {
       // Step 1: Select first line
@@ -2414,16 +3042,40 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
                 0
               ];
 
-              // Calculate perpendicular vectors
+              // Determine which endpoint of each line is closer to intersection
+              const distLine1Start = Math.hypot(intersectionPoint[0] - line1.start[0], intersectionPoint[1] - line1.start[1]);
+              const distLine1End = Math.hypot(intersectionPoint[0] - line1.end[0], intersectionPoint[1] - line1.end[1]);
+              const distLine2Start = Math.hypot(intersectionPoint[0] - line2.start[0], intersectionPoint[1] - line2.start[1]);
+              const distLine2End = Math.hypot(intersectionPoint[0] - line2.end[0], intersectionPoint[1] - line2.end[1]);
+
+              const line1UseEnd = distLine1End < distLine1Start;
+              const line2UseEnd = distLine2End < distLine2Start;
+
+              // Calculate direction vectors pointing TOWARD intersection
               const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
               const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-              const dir1: Point = [dx1 / len1, dy1 / len1, 0];
-              const dir2: Point = [dx2 / len2, dy2 / len2, 0];
+              // If end is closer to intersection, direction is start->end, else end->start
+              const dir1: Point = line1UseEnd
+                ? [dx1 / len1, dy1 / len1, 0]
+                : [-dx1 / len1, -dy1 / len1, 0];
+              const dir2: Point = line2UseEnd
+                ? [dx2 / len2, dy2 / len2, 0]
+                : [-dx2 / len2, -dy2 / len2, 0];
 
               // Calculate fillet center
-              const angle = Math.acos(dir1[0] * dir2[0] + dir1[1] * dir2[1]);
+              const dotProduct = dir1[0] * dir2[0] + dir1[1] * dir2[1];
+              const clampedDot = Math.max(-1, Math.min(1, dotProduct));
+              const angle = Math.acos(clampedDot);
+
+              if (angle < 0.001 || angle > Math.PI - 0.001) {
+                // Lines are parallel or anti-parallel, can't fillet
+                cancelCommand();
+                return;
+              }
+
               const dist = radius / Math.tan(angle / 2);
 
+              // Fillet points: move back from intersection along each line
               const filletStart: Point = [
                 intersectionPoint[0] - dir1[0] * dist,
                 intersectionPoint[1] - dir1[1] * dist,
@@ -2460,15 +3112,18 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
               const startAngle = Math.atan2(filletStart[1] - filletCenter[1], filletStart[0] - filletCenter[0]);
               const endAngle = Math.atan2(filletEnd[1] - filletCenter[1], filletEnd[0] - filletCenter[0]);
 
-              // Trim lines and add arc
-              updateEntity(line1.id, {
-                ...line1,
-                end: filletStart,
-              });
-              updateEntity(line2.id, {
-                ...line2,
-                end: filletEnd,
-              });
+              // Trim lines - update the correct endpoint
+              if (line1UseEnd) {
+                updateEntity(line1.id, { ...line1, end: filletStart });
+              } else {
+                updateEntity(line1.id, { ...line1, start: filletStart });
+              }
+
+              if (line2UseEnd) {
+                updateEntity(line2.id, { ...line2, end: filletEnd });
+              } else {
+                updateEntity(line2.id, { ...line2, start: filletEnd });
+              }
 
               addEntity({
                 type: 'ARC',
@@ -2549,13 +3204,26 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
                 0
               ];
 
-              // Calculate direction vectors
+              // Determine which endpoint of each line is closer to intersection
+              const distLine1Start = Math.hypot(intersectionPoint[0] - line1.start[0], intersectionPoint[1] - line1.start[1]);
+              const distLine1End = Math.hypot(intersectionPoint[0] - line1.end[0], intersectionPoint[1] - line1.end[1]);
+              const distLine2Start = Math.hypot(intersectionPoint[0] - line2.start[0], intersectionPoint[1] - line2.start[1]);
+              const distLine2End = Math.hypot(intersectionPoint[0] - line2.end[0], intersectionPoint[1] - line2.end[1]);
+
+              const line1UseEnd = distLine1End < distLine1Start;
+              const line2UseEnd = distLine2End < distLine2Start;
+
+              // Calculate direction vectors pointing TOWARD intersection
               const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
               const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-              const dir1: Point = [dx1 / len1, dy1 / len1, 0];
-              const dir2: Point = [dx2 / len2, dy2 / len2, 0];
+              const dir1: Point = line1UseEnd
+                ? [dx1 / len1, dy1 / len1, 0]
+                : [-dx1 / len1, -dy1 / len1, 0];
+              const dir2: Point = line2UseEnd
+                ? [dx2 / len2, dy2 / len2, 0]
+                : [-dx2 / len2, -dy2 / len2, 0];
 
-              // Chamfer points
+              // Chamfer points: move back from intersection along each line
               const chamferStart: Point = [
                 intersectionPoint[0] - dir1[0] * distance,
                 intersectionPoint[1] - dir1[1] * distance,
@@ -2567,15 +3235,18 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
                 0
               ];
 
-              // Trim lines and add chamfer line
-              updateEntity(line1.id, {
-                ...line1,
-                end: chamferStart,
-              });
-              updateEntity(line2.id, {
-                ...line2,
-                end: chamferEnd,
-              });
+              // Trim lines - update the correct endpoint
+              if (line1UseEnd) {
+                updateEntity(line1.id, { ...line1, end: chamferStart });
+              } else {
+                updateEntity(line1.id, { ...line1, start: chamferStart });
+              }
+
+              if (line2UseEnd) {
+                updateEntity(line2.id, { ...line2, end: chamferEnd });
+              } else {
+                updateEntity(line2.id, { ...line2, start: chamferEnd });
+              }
 
               addEntity({
                 type: 'LINE',
@@ -2670,10 +3341,10 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
               let newEnt = { ...ent, id: Date.now() + Math.random() + i * 1000 };
 
               if (ent.type === 'LINE') {
-                (newEnt as any).start = rotatePt((ent as any).start, centerPoint, angle);
-                (newEnt as any).end = rotatePt((ent as any).end, centerPoint, angle);
+                (newEnt as any).start = rotatePt((ent as any).start, centerPoint[0], centerPoint[1], angle);
+                (newEnt as any).end = rotatePt((ent as any).end, centerPoint[0], centerPoint[1], angle);
               } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
-                (newEnt as any).center = rotatePt((ent as any).center, centerPoint, angle);
+                (newEnt as any).center = rotatePt((ent as any).center, centerPoint[0], centerPoint[1], angle);
                 if (ent.type === 'ARC') {
                   (newEnt as any).startAngle = (ent as any).startAngle + angle;
                   (newEnt as any).endAngle = (ent as any).endAngle + angle;
@@ -2681,14 +3352,14 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
                   (newEnt as any).rotation = ((ent as any).rotation || 0) + angle;
                 }
               } else if (ent.type === 'LWPOLYLINE') {
-                (newEnt as any).vertices = (ent as any).vertices.map((v: Point) => rotatePt(v, centerPoint, angle));
+                (newEnt as any).vertices = (ent as any).vertices.map((v: Point) => rotatePt(v, centerPoint[0], centerPoint[1], angle));
               } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
-                (newEnt as any).position = rotatePt((ent as any).position, centerPoint, angle);
+                (newEnt as any).position = rotatePt((ent as any).position, centerPoint[0], centerPoint[1], angle);
                 if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
                   (newEnt as any).rotation = ((ent as any).rotation || 0) + angle;
                 }
               } else if (ent.type === 'RAY' || ent.type === 'XLINE') {
-                (newEnt as any).origin = rotatePt((ent as any).origin, centerPoint, angle);
+                (newEnt as any).origin = rotatePt((ent as any).origin, centerPoint[0], centerPoint[1], angle);
                 // Rotate direction vector
                 const dir = (ent as any).direction;
                 const cosA = Math.cos(angle);
@@ -2735,8 +3406,10 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         entities.forEach(ent => {
           if (ent.visible === false) return;
 
-          const isInside = isEntityInBox(ent, minX, minY, maxX, maxY);
-          const isCrossing = doesEntityIntersectBox(ent, minX, minY, maxX, maxY);
+          const minPt: Point = [minX, minY, 0];
+          const maxPt: Point = [maxX, maxY, 0];
+          const isInside = isEntityInBox(ent, minPt, maxPt);
+          const isCrossing = doesEntityIntersectBox(ent, minPt, maxPt);
 
           if (isInside) {
             toMove.push(ent.id);
@@ -2815,9 +3488,9 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
 
             // Check which endpoints are inside the box
             const startInside = start[0] >= minX && start[0] <= maxX &&
-                               start[1] >= minY && start[1] <= maxY;
+              start[1] >= minY && start[1] <= maxY;
             const endInside = end[0] >= minX && end[0] <= maxX &&
-                             end[1] >= minY && end[1] <= maxY;
+              end[1] >= minY && end[1] <= maxY;
 
             updateEntity(id, {
               start: startInside ? translatePt(start, dx, dy) : start,
@@ -2827,7 +3500,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             const vertices = (ent as any).vertices;
             const newVertices = vertices.map((v: Point) => {
               const vInside = v[0] >= minX && v[0] <= maxX &&
-                            v[1] >= minY && v[1] <= maxY;
+                v[1] >= minY && v[1] <= maxY;
               return vInside ? translatePt(v, dx, dy) : v;
             });
 
@@ -2838,7 +3511,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             // For arcs, if center is inside, move the whole arc
             const center = (ent as any).center;
             const centerInside = center[0] >= minX && center[0] <= maxX &&
-                                center[1] >= minY && center[1] <= maxY;
+              center[1] >= minY && center[1] <= maxY;
 
             if (centerInside) {
               updateEntity(id, {
@@ -2855,10 +3528,23 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       }
     } else if (activeCommand === 'DIMLINEAR' || activeCommand === 'DIMALIGNED') {
       if (step === 1) {
-        setTempPoints([point]);
+        // Otomatik nokta tespiti ile ilk noktayı seç
+        const detected = autoDetectPoints(point, entities, 15);
+        if (detected.length > 0 && osnapEnabled) {
+          // Snap varsa, snap noktasını kullan
+          setTempPoints([detected[0].point]);
+        } else {
+          setTempPoints([point]);
+        }
         setStep(2);
       } else if (step === 2) {
-        setTempPoints(prev => [...prev, point]);
+        // İkinci nokta - otomatik tespit
+        const detected = autoDetectPoints(point, entities, 15);
+        if (detected.length > 0 && osnapEnabled) {
+          setTempPoints(prev => [...prev, detected[0].point]);
+        } else {
+          setTempPoints(prev => [...prev, point]);
+        }
         setStep(3);
       } else if (step === 3) {
         const start = tempPoints[0];
@@ -2868,171 +3554,368 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         // Calculate geometry
         const geometry = calculateDimensionGeometry(start, end, point, type);
 
+        // Varsayılan ayarları kullan
+        const settings = DEFAULT_DIMENSION_SETTINGS;
+
         addEntity({
           type: 'DIMENSION',
           dimType: activeCommand,
           start: start,
           end: end,
           dimLinePosition: point,
-          textHeight: 2.5,
+          textHeight: settings.textHeight,
+          arrowSize: settings.arrowSize,
+          extensionLineOffset: settings.extensionLineOffset,
+          extensionLineExtend: settings.extensionLineExtend,
+          arrowStyle: settings.arrowStyle,
+          arrowDirection: settings.arrowDirection,
+          dimLineColor: settings.dimLineColor,
+          extLineColor: settings.extLineColor,
+          arrowColor: settings.arrowColor,
+          textColor: settings.textColor,
+          dimLineWeight: settings.dimLineWeight,
+          extLineWeight: settings.extLineWeight,
+          precision: settings.precision,
           rotation: geometry.rotation,
-          color: '#ffffff',
+          color: settings.dimLineColor,
           layer: '0'
-        });
+        } as any);
         createHistoryItem(activeCommand as CommandType);
         cancelCommand();
       }
     } else if (activeCommand === 'DIMANGULAR') {
-      // Step 1: Select first line
-      // Step 2: Select second line
-      // Step 3: Position the dimension arc
+      // AutoCAD uyumlu açı ölçüsü:
+      // Step 1: İlk çizgi/segment seç
+      // Step 2: İkinci çizgi/segment seç
+      // Step 3: Açı ölçüsü pozisyonunu belirle
+
       if (step === 1) {
-        // Find clicked line entity
-        let closestLineId: number | null = null;
-        let minD = Infinity;
-        const SELECT_THRESHOLD = 50.0;
-        console.log('DIMANGULAR Step 1: Looking for lines near', point);
+        // En yakın çizgiyi bul (LINE veya LWPOLYLINE segmenti)
+        let closestEntity: any = null;
+        let minDist = Infinity;
+        const SELECT_THRESHOLD = 20.0;
 
-        let bestCandidateId: number | null = null;
-        let bestCandidateDist = Infinity;
-
+        // LINE entity'lerini kontrol et
         entities.forEach(ent => {
           if (ent.visible === false) return;
-          if (ent.type !== 'LINE') return;
-          const d = closestPointOnEntity(point[0], point[1], ent);
-          console.log('  Line', ent.id, 'distance:', d);
-
-          if (d < bestCandidateDist) {
-            bestCandidateDist = d;
-            bestCandidateId = ent.id;
+          if (ent.type === 'LINE') {
+            const d = closestPointOnEntity(point[0], point[1], ent);
+            if (d < minDist && d < SELECT_THRESHOLD) {
+              minDist = d;
+              closestEntity = {
+                type: 'LINE',
+                entity: ent,
+                startPoint: ent.start,
+                endPoint: ent.end
+              };
+            }
           }
-
-          if (d < SELECT_THRESHOLD && d < minD) { minD = d; closestLineId = ent.id; }
         });
 
-        console.log('  Best candidate:', bestCandidateId, 'dist:', bestCandidateDist);
-        console.log('DIMANGULAR Step 1: Selected line', closestLineId);
-        if (closestLineId) {
-          setCommandState(prev => ({ ...prev, line1Id: closestLineId }));
+        // LWPOLYLINE segmentlerini kontrol et
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type === 'LWPOLYLINE') {
+            const polyline = ent as any;
+            const verts = polyline.vertices || [];
+
+            for (let i = 0; i < verts.length - 1; i++) {
+              const segStart = verts[i];
+              const segEnd = verts[i + 1];
+              // Segment orta noktası
+              const segMid: Point = [(segStart[0] + segEnd[0]) / 2, (segStart[1] + segEnd[1]) / 2, 0];
+              const d = Math.hypot(point[0] - segMid[0], point[1] - segMid[1]);
+
+              if (d < minDist && d < SELECT_THRESHOLD) {
+                minDist = d;
+                closestEntity = {
+                  type: 'POLYSEG',
+                  entity: ent,
+                  startPoint: segStart,
+                  endPoint: segEnd
+                };
+              }
+            }
+
+            // Closed polyline için son segment
+            if (polyline.closed && verts.length > 2) {
+              const segStart = verts[verts.length - 1];
+              const segEnd = verts[0];
+              const segMid: Point = [(segStart[0] + segEnd[0]) / 2, (segStart[1] + segEnd[1]) / 2, 0];
+              const d = Math.hypot(point[0] - segMid[0], point[1] - segMid[1]);
+
+              if (d < minDist && d < SELECT_THRESHOLD) {
+                minDist = d;
+                closestEntity = {
+                  type: 'POLYSEG',
+                  entity: ent,
+                  startPoint: segStart,
+                  endPoint: segEnd
+                };
+              }
+            }
+          }
+        });
+
+        if (closestEntity) {
+          setCommandState({
+            line1Start: closestEntity!.startPoint,
+            line1End: closestEntity!.endPoint,
+            line1EntityId: closestEntity!.entity.id
+          });
           setStep(2);
         }
       } else if (step === 2) {
-        // Find second line entity
-        let closestLineId: number | null = null;
-        let minD = Infinity;
-        const SELECT_THRESHOLD = 50.0;
-        console.log('DIMANGULAR Step 2: Looking for second line near', point, 'excluding', commandState.line1Id);
+        // İkinci çizgiyi/segmenti bul
+        const { line1EntityId } = commandState;
+        let closestEntity: any = null;
+        let minDist = Infinity;
+        const SELECT_THRESHOLD = 20.0;
 
-        let bestCandidateId: number | null = null;
-        let bestCandidateDist = Infinity;
-
+        // LINE entity'lerini kontrol et
         entities.forEach(ent => {
           if (ent.visible === false) return;
-          if (ent.type !== 'LINE') return;
-          if (ent.id === commandState.line1Id) return; // Don't select same line
-          const d = closestPointOnEntity(point[0], point[1], ent);
-          console.log('  Line', ent.id, 'distance:', d);
+          if (ent.type === 'LINE') {
+            // Aynı entity'i seçme
+            if (ent.id === line1EntityId) return;
 
-          if (d < bestCandidateDist) {
-            bestCandidateDist = d;
-            bestCandidateId = ent.id;
+            const d = closestPointOnEntity(point[0], point[1], ent);
+            if (d < minDist && d < SELECT_THRESHOLD) {
+              minDist = d;
+              closestEntity = {
+                type: 'LINE',
+                entity: ent,
+                startPoint: ent.start,
+                endPoint: ent.end
+              };
+            }
           }
-
-          if (d < SELECT_THRESHOLD && d < minD) { minD = d; closestLineId = ent.id; }
         });
 
-        console.log('  Best candidate:', bestCandidateId, 'dist:', bestCandidateDist);
+        // LWPOLYLINE segmentlerini kontrol et
+        entities.forEach(ent => {
+          if (ent.visible === false) return;
+          if (ent.type === 'LWPOLYLINE') {
+            const polyline = ent as any;
+            const verts = polyline.vertices || [];
 
-        console.log('DIMANGULAR Step 2: Selected line', closestLineId);
-        if (closestLineId) {
-          setCommandState(prev => ({ ...prev, line2Id: closestLineId }));
+            for (let i = 0; i < verts.length - 1; i++) {
+              const segStart = verts[i];
+              const segEnd = verts[i + 1];
+              // Aynı segmenti seçme
+              if (ent.id === line1EntityId) {
+                const p1 = commandState.line1Start;
+                const p2 = commandState.line1End;
+                if ((Math.abs(segStart[0] - p1[0]) < 0.001 && Math.abs(segStart[1] - p1[1]) < 0.001 &&
+                  Math.abs(segEnd[0] - p2[0]) < 0.001 && Math.abs(segEnd[1] - p2[1]) < 0.001) ||
+                  (Math.abs(segEnd[0] - p1[0]) < 0.001 && Math.abs(segEnd[1] - p1[1]) < 0.001 &&
+                    Math.abs(segStart[0] - p2[0]) < 0.001 && Math.abs(segStart[1] - p2[1]) < 0.001)) {
+                  continue;
+                }
+              }
+
+              const segMid: Point = [(segStart[0] + segEnd[0]) / 2, (segStart[1] + segEnd[1]) / 2, 0];
+              const d = Math.hypot(point[0] - segMid[0], point[1] - segMid[1]);
+
+              if (d < minDist && d < SELECT_THRESHOLD) {
+                minDist = d;
+                closestEntity = {
+                  type: 'POLYSEG',
+                  entity: ent,
+                  startPoint: segStart,
+                  endPoint: segEnd
+                };
+              }
+            }
+
+            // Closed polyline için son segment
+            if (polyline.closed && verts.length > 2) {
+              const segStart = verts[verts.length - 1];
+              const segEnd = verts[0];
+              const p1 = commandState.line1Start;
+              const p2 = commandState.line1End;
+              if (ent.id === line1EntityId) {
+                if ((Math.abs(segStart[0] - p1[0]) < 0.001 && Math.abs(segStart[1] - p1[1]) < 0.001 &&
+                  Math.abs(segEnd[0] - p2[0]) < 0.001 && Math.abs(segEnd[1] - p2[1]) < 0.001) ||
+                  (Math.abs(segEnd[0] - p1[0]) < 0.001 && Math.abs(segEnd[1] - p1[1]) < 0.001 &&
+                    Math.abs(segStart[0] - p2[0]) < 0.001 && Math.abs(segStart[1] - p2[1]) < 0.001)) {
+                  // Skip same segment
+                } else {
+                  const segMid: Point = [(segStart[0] + segEnd[0]) / 2, (segStart[1] + segEnd[1]) / 2, 0];
+                  const d = Math.hypot(point[0] - segMid[0], point[1] - segMid[1]);
+                  if (d < minDist && d < SELECT_THRESHOLD) {
+                    minDist = d;
+                    closestEntity = {
+                      type: 'POLYSEG',
+                      entity: ent,
+                      startPoint: segStart,
+                      endPoint: segEnd
+                    };
+                  }
+                }
+              } else {
+                const segMid: Point = [(segStart[0] + segEnd[0]) / 2, (segStart[1] + segEnd[1]) / 2, 0];
+                const d = Math.hypot(point[0] - segMid[0], point[1] - segMid[1]);
+                if (d < minDist && d < SELECT_THRESHOLD) {
+                  minDist = d;
+                  closestEntity = {
+                    type: 'POLYSEG',
+                    entity: ent,
+                    startPoint: segStart,
+                    endPoint: segEnd
+                  };
+                }
+              }
+            }
+          }
+        });
+
+        if (closestEntity) {
+          setCommandState(prev => ({
+            ...prev,
+            line2Start: closestEntity!.startPoint,
+            line2End: closestEntity!.endPoint
+          }));
           setStep(3);
         }
       } else if (step === 3) {
-        // Get both lines
-        console.log('DIMANGULAR Step 3: Creating dimension with lines', commandState.line1Id, commandState.line2Id);
-        const line1 = entities.find(e => e.id === commandState.line1Id) as any;
-        const line2 = entities.find(e => e.id === commandState.line2Id) as any;
+        // Açı ölçüsünü oluştur
+        const line1Start = commandState.line1Start as Point;
+        const line1End = commandState.line1End as Point;
+        const line2Start = commandState.line2Start as Point;
+        const line2End = commandState.line2End as Point;
 
-        if (line1 && line2) {
-          // Calculate intersection point of two lines
-          const x1 = line1.start[0], y1 = line1.start[1];
-          const x2 = line1.end[0], y2 = line1.end[1];
-          const x3 = line2.start[0], y3 = line2.start[1];
-          const x4 = line2.end[0], y4 = line2.end[1];
+        // İki çizginin kesişim noktasını bul
+        const x1 = line1Start[0], y1 = line1Start[1];
+        const x2 = line1End[0], y2 = line1End[1];
+        const x3 = line2Start[0], y3 = line2Start[1];
+        const x4 = line2End[0], y4 = line2End[1];
 
-          const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+        const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
 
-          let center: Point;
-          if (Math.abs(denom) < 0.0001) {
-            // Lines are parallel, use midpoint
-            center = [(x1 + x2 + x3 + x4) / 4, (y1 + y2 + y3 + y4) / 4, 0];
-          } else {
-            // Calculate intersection
-            const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
-            center = [x1 + t * (x2 - x1), y1 + t * (y2 - y1), 0];
-          }
-
-          // Calculate angles of both lines
-          const angle1 = Math.atan2(y2 - y1, x2 - x1);
-          const angle2 = Math.atan2(y4 - y3, x4 - x3);
-
-          // Determine which angle to measure
-          let startAngle = angle1;
-          let endAngle = angle2;
-
-          // Normalize angles
-          if (startAngle < 0) startAngle += Math.PI * 2;
-          if (endAngle < 0) endAngle += Math.PI * 2;
-
-          // Calculate the measured angle
-          let measureAngle = Math.abs(endAngle - startAngle);
-          if (measureAngle > Math.PI) {
-            measureAngle = Math.PI * 2 - measureAngle;
-          }
-
-          // Radius from center to dimension position
-          const radius = Math.hypot(point[0] - center[0], point[1] - center[1]);
-
-          // Generate curve points for arc
-          const curvePoints: [number, number, number][] = [];
-          const segments = 20;
-          const diff = measureAngle;
-
-          for (let i = 0; i <= segments; i++) {
-            const ang = startAngle + (diff * i / segments);
-            curvePoints.push([
-              center[0] + Math.cos(ang) * radius,
-              center[1] + Math.sin(ang) * radius,
-              0
-            ]);
-          }
-
-          // Points on lines for extension lines
-          const p1: Point = [center[0] + Math.cos(startAngle) * radius * 1.2, center[1] + Math.sin(startAngle) * radius * 1.2, 0];
-          const p2: Point = [center[0] + Math.cos(endAngle) * radius * 1.2, center[1] + Math.sin(endAngle) * radius * 1.2, 0];
-
-          addEntity({
-            type: 'DIMENSION',
-            dimType: 'DIMANGULAR',
-            start: p1,
-            end: p2,
-            center: center,
-            dimLinePosition: point,
-            startAngle: startAngle,
-            endAngle: startAngle + measureAngle,
-            textHeight: 5,
-            arrowSize: 5,
-            color: '#ffffff',
-            layer: '0',
-            text: `${(measureAngle * 180 / Math.PI).toFixed(1)}°`,
-            _curvePoints: curvePoints
-          } as any);
-          createHistoryItem(activeCommand as CommandType);
-          cancelCommand();
+        let center: Point;
+        if (Math.abs(denom) < 0.0001) {
+          // Paralel çizgiler, orta nokta kullan
+          center = [(x1 + x2 + x3 + x4) / 4, (y1 + y2 + y3 + y4) / 4, 0];
+        } else {
+          // Kesişim noktası hesapla
+          const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+          center = [x1 + t * (x2 - x1), y1 + t * (y2 - y1), 0];
         }
+
+        // Çizgi açılarını hesapla
+        const angle1 = Math.atan2(y2 - y1, x2 - x1);
+        const angle2 = Math.atan2(y4 - y3, x4 - x3);
+
+        // Hangi açıyı ölçeceğimizi belirle
+        // Açıları normalize et
+        let startAngle = angle1 < 0 ? angle1 + Math.PI * 2 : angle1;
+        let endAngle = angle2 < 0 ? angle2 + Math.PI * 2 : angle2;
+
+        // Yarıçap hesapla (center'dan tıklanan noktaya)
+        const radius = Math.max(Math.hypot(point[0] - center[0], point[1] - center[1]), 15);
+
+        // Kullanıcının tıkladığı pozisyona göre hangi açıyı ölçeceğimizi belirle
+        const clickAngle = Math.atan2(point[1] - center[1], point[0] - center[0]);
+        let clickAngleNorm = clickAngle < 0 ? clickAngle + Math.PI * 2 : clickAngle;
+
+        // Açı farkını hesapla
+        let diff = endAngle - startAngle;
+        if (diff < 0) diff += Math.PI * 2;
+
+        // Cursor hangi açı bölgesinde?
+        const isInFirstArc = (() => {
+          let a = clickAngleNorm;
+          let s = startAngle;
+          let e = endAngle;
+          // Normalize
+          while (a < 0) a += Math.PI * 2;
+          while (s < 0) s += Math.PI * 2;
+          while (e < 0) e += Math.PI * 2;
+          while (a >= Math.PI * 2) a -= Math.PI * 2;
+          while (s >= Math.PI * 2) s -= Math.PI * 2;
+          while (e >= Math.PI * 2) e -= Math.PI * 2;
+
+          if (s < e) {
+            return a >= s && a <= e;
+          } else {
+            return a >= s || a <= e;
+          }
+        })();
+
+        // Ölçülecek açıyı hesapla
+        let measureAngle: number;
+        let arcStartAngle: number;
+        let arcEndAngle: number;
+
+        if (isInFirstArc) {
+          measureAngle = diff;
+          arcStartAngle = startAngle;
+          arcEndAngle = endAngle;
+        } else {
+          measureAngle = Math.PI * 2 - diff;
+          arcStartAngle = endAngle;
+          arcEndAngle = startAngle + Math.PI * 2;
+        }
+
+        // Yay noktalarını oluştur
+        const curvePoints: [number, number, number][] = [];
+        const segments = 30;
+        for (let i = 0; i <= segments; i++) {
+          const ang = arcStartAngle + ((arcEndAngle - arcStartAngle) * i / segments);
+          curvePoints.push([
+            center[0] + Math.cos(ang) * radius,
+            center[1] + Math.sin(ang) * radius,
+            0
+          ]);
+        }
+
+        // Uzantı çizgileri için noktalar
+        const p1: Point = [
+          center[0] + Math.cos(arcStartAngle) * (radius + 5),
+          center[1] + Math.sin(arcStartAngle) * (radius + 5),
+          0
+        ];
+        const p2: Point = [
+          center[0] + Math.cos(arcEndAngle) * (radius + 5),
+          center[1] + Math.sin(arcEndAngle) * (radius + 5),
+          0
+        ];
+
+        const settings = DEFAULT_DIMENSION_SETTINGS;
+
+        addEntity({
+          type: 'DIMENSION',
+          dimType: 'DIMANGULAR',
+          start: p1,
+          end: p2,
+          center: center,
+          dimLinePosition: point,
+          startAngle: arcStartAngle,
+          endAngle: arcEndAngle,
+          textHeight: settings.textHeight,
+          arrowSize: settings.arrowSize,
+          arrowStyle: settings.arrowStyle,
+          arrowColor: settings.arrowColor,
+          textColor: settings.textColor,
+          dimLineColor: settings.dimLineColor,
+          dimLineWeight: settings.dimLineWeight,
+          extLineWeight: settings.extLineWeight,
+          color: settings.dimLineColor,
+          layer: '0',
+          text: `${Math.abs(measureAngle * 180 / Math.PI).toFixed(settings.anglePrecision)}°`,
+          _curvePoints: curvePoints
+        } as any);
+
+        createHistoryItem(activeCommand as CommandType);
+        cancelCommand();
       }
-    } else if (activeCommand === 'DIMRADIUS' || activeCommand === 'DIMDIAMETER') {
+    }
+
+    // Helper fonksiyonlar (handleCommandInput içinde)
+
+
+    if (activeCommand === 'DIMRADIUS' || activeCommand === 'DIMDIAMETER') {
       if (step === 1) {
         let closestId: number | null = null;
         let minD = Infinity;
@@ -3054,17 +3937,27 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       } else if (step === 2) {
         const { targetEntity } = commandState;
         if (targetEntity) {
+          const settings = DEFAULT_DIMENSION_SETTINGS;
+          const radius = (targetEntity as any).radius;
+
           addEntity({
             type: 'DIMENSION',
             dimType: activeCommand,
             start: (targetEntity as any).center,
             end: point,
             dimLinePosition: point,
-            textHeight: 2.5,
-            color: '#ffffff',
+            textHeight: settings.textHeight,
+            arrowSize: settings.arrowSize,
+            arrowStyle: settings.arrowStyle,
+            arrowColor: settings.arrowColor,
+            textColor: settings.textColor,
+            dimLineColor: settings.dimLineColor,
+            dimLineWeight: settings.dimLineWeight,
+            color: settings.dimLineColor,
             layer: '0',
-            text: activeCommand === 'DIMRADIUS' ? `R${(targetEntity as any).radius.toFixed(2)}` : `Ø${((targetEntity as any).radius * 2).toFixed(2)}`
-          });
+            text: activeCommand === 'DIMRADIUS' ? `R${radius.toFixed(2)}` : `Ø${(radius * 2).toFixed(2)}`,
+            precision: settings.precision
+          } as any);
           createHistoryItem(activeCommand as CommandType);
           cancelCommand();
         }
@@ -3163,49 +4056,162 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             createHistoryItem('LEADER' as CommandType);
             cancelCommand();
             setTempPoints([]);
-            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => { } });
           },
           onCancel: () => {
-            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => { } });
             cancelCommand();
           }
         });
       }
-    } else if (activeCommand === 'DIMCONTINUE') {
-      // DIMCONTINUE: Continue dimensioning from last dimension
-      // Step 1: Find last DIMLINEAR or DIMALIGNED dimension
-      // Step 2: Click next point to continue dimension
+    } else if (activeCommand === 'HATCH') {
+      // HATCH: Create hatch pattern in closed boundary
+      // Step 1: Select closed entity
       if (step === 1) {
-        // Find the most recent linear or aligned dimension
-        const lastDim = [...entities]
-          .reverse()
-          .find(e => e.type === 'DIMENSION' && (
-            (e as any).dimType === 'DIMLINEAR' ||
-            (e as any).dimType === 'DIMALIGNED'
-          ));
+        let closestId: number | null = null;
+        let minD = Infinity;
+        const SELECT_THRESHOLD = 10.0;
 
-        if (lastDim) {
-          setCommandState({
-            lastDimension: lastDim,
-            basePoint: (lastDim as any).end,
-            dimLinePosition: (lastDim as any).dimLinePosition
-          });
-          setTempPoints([(lastDim as any).end]);
-          setStep(2);
-        } else {
-          console.log('No previous linear or aligned dimension found');
-          cancelCommand();
+        entities.forEach(ent => {
+          if (!ent.visible) return;
+
+          // Check if entity is closed or circle/ellipse
+          let isClosed = false;
+          if (ent.type === 'CIRCLE' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') isClosed = true;
+          if (ent.type === 'LWPOLYLINE' && (ent as any).closed) isClosed = true;
+
+          if (!isClosed) return;
+
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < minD && d < SELECT_THRESHOLD) {
+            minD = d;
+            closestId = ent.id;
+          }
+        });
+
+        if (closestId) {
+          const boundaryEnt = entities.find(e => e.id === closestId);
+          if (boundaryEnt) {
+            let vertices: Point[] = [];
+
+            // Convert boundary to vertices
+            if (boundaryEnt.type === 'LWPOLYLINE') {
+              vertices = [...(boundaryEnt as any).vertices];
+              // Close loop if needed
+              if (vertices.length > 0 &&
+                (Math.abs(vertices[0][0] - vertices[vertices.length - 1][0]) > 0.001 ||
+                  Math.abs(vertices[0][1] - vertices[vertices.length - 1][1]) > 0.001)) {
+                vertices.push(vertices[0]);
+              }
+            } else if (boundaryEnt.type === 'CIRCLE') {
+              const c = boundaryEnt as any;
+              for (let i = 0; i <= 64; i++) {
+                const a = (i / 64) * Math.PI * 2;
+                vertices.push([
+                  c.center[0] + Math.cos(a) * c.radius,
+                  c.center[1] + Math.sin(a) * c.radius,
+                  c.center[2] || 0
+                ]);
+              }
+            } else if (boundaryEnt.type === 'ELLIPSE') {
+              const e = boundaryEnt as any;
+              for (let i = 0; i <= 64; i++) {
+                const a = (i / 64) * Math.PI * 2;
+                // Rotation needed
+                const cosR = Math.cos(e.rotation || 0);
+                const sinR = Math.sin(e.rotation || 0);
+                const x = e.rx * Math.cos(a);
+                const y = e.ry * Math.sin(a);
+
+                vertices.push([
+                  e.center[0] + x * cosR - y * sinR,
+                  e.center[1] + x * sinR + y * cosR,
+                  e.center[2] || 0
+                ]);
+              }
+            }
+
+            if (vertices.length >= 3) {
+              addEntity({
+                type: 'HATCH',
+                boundary: {
+                  type: 'LWPOLYLINE',
+                  vertices: vertices,
+                  closed: true
+                },
+                pattern: { name: 'ANSI31', type: 'predefined', angle: 45 },
+                scale: 1,
+                rotation: 0,
+                color: boundaryEnt.color || '#ffffff',
+                layer: boundaryEnt.layer || '0'
+              } as any);
+              createHistoryItem('HATCH' as CommandType);
+              // cancelCommand(); // Keep command active
+              setTempPoints([]); // Reset points if any
+              // setStep(1); // Already 1, stay in loop
+            }
+          }
         }
-      } else if (step === 2) {
-        // Create new dimension continuing from last
-        const { lastDimension, basePoint, dimLinePosition } = commandState;
-        const type = (lastDimension as any).dimType === 'DIMLINEAR' ? 'linear' : 'aligned';
+      }
+    } else if (activeCommand === 'DIMCONTINUE') {
+      // DIMCONTINUE: Ardışık ölçü - önceden ölçü olmadan da çalışır
+      // Step 1: İlk nokta, Step 2: İkinci nokta, Step 3: Ölçü pozisyonu, Step 4+: Devam
 
-        const geometry = calculateDimensionGeometry(basePoint, point, dimLinePosition, type);
+      if (step === 1) {
+        // İlk nokta seçildi
+        setTempPoints([point]);
+        setStep(2);
+      } else if (step === 2) {
+        // İkinci nokta seçildi
+        setTempPoints([...tempPoints, point]);
+        setStep(3);
+      } else if (step === 3) {
+        // Ölçü çizgisi pozisyonu belirlendi - ilk ölçüyü oluştur
+        const startPt = tempPoints[0];
+        const endPt = tempPoints[1];
+
+        // Otomatik olarak düz mü eğik mi belirle
+        const dx = Math.abs(endPt[0] - startPt[0]);
+        const dy = Math.abs(endPt[1] - startPt[1]);
+        const isHorizontalOrVertical = dx < 0.1 || dy < 0.1 || Math.abs(dx - dy) < 0.1 * Math.max(dx, dy);
+        const dimType = isHorizontalOrVertical ? 'DIMLINEAR' : 'DIMALIGNED';
+        const geoType = dimType === 'DIMLINEAR' ? 'linear' : 'aligned';
+
+        const geometry = calculateDimensionGeometry(startPt, endPt, point, geoType);
 
         addEntity({
           type: 'DIMENSION',
-          dimType: (lastDimension as any).dimType,
+          dimType: dimType,
+          start: startPt,
+          end: endPt,
+          dimLinePosition: point,
+          textHeight: 2.5,
+          rotation: geometry.rotation,
+          color: '#ffffff',
+          layer: '0'
+        });
+
+        createHistoryItem('DIMCONTINUE' as CommandType);
+
+        // Devam modu için ayarla
+        setCommandState({
+          basePoint: endPt,
+          dimLinePosition: point,
+          dimType: dimType,
+          hasPreviousDim: true
+        });
+        setTempPoints([endPt]);
+        setStep(4);
+      } else if (step === 4) {
+        // Devam modu - yeni noktalar seç
+        const { basePoint, dimLinePosition, dimType } = commandState;
+        const geoType = dimType === 'DIMLINEAR' ? 'linear' : 'aligned';
+
+        const geometry = calculateDimensionGeometry(basePoint, point, dimLinePosition, geoType);
+
+        addEntity({
+          type: 'DIMENSION',
+          dimType: dimType || 'DIMLINEAR',
           start: basePoint,
           end: point,
           dimLinePosition: dimLinePosition,
@@ -3217,59 +4223,96 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
 
         createHistoryItem('DIMCONTINUE' as CommandType);
 
-        // Update for next continue
+        // Sonraki için güncelle
         setCommandState({
-          lastDimension: lastDimension,
-          basePoint: point,
-          dimLinePosition: dimLinePosition
+          ...commandState,
+          basePoint: point
         });
         setTempPoints([point]);
-        // Stay in command for multiple continues
+        // Step 4'te kal - devam et
       }
     } else if (activeCommand === 'DIMBASELINE') {
-      // DIMBASELINE: Create multiple dimensions from same baseline
-      // Step 1: Find last DIMLINEAR or DIMALIGNED dimension (use as baseline)
-      // Step 2-N: Click points to create dimensions from baseline
+      // DIMBASELINE: Taban ölçü - önceden ölçü olmadan da çalışır
+      // Step 1: Taban nokta, Step 2: İlk bitiş noktası, Step 3: Ölçü pozisyonu, Step 4+: Devam
+
       if (step === 1) {
-        // Find the most recent linear or aligned dimension
-        const lastDim = [...entities]
-          .reverse()
-          .find(e => e.type === 'DIMENSION' && (
-            (e as any).dimType === 'DIMLINEAR' ||
-            (e as any).dimType === 'DIMALIGNED'
-          ));
-
-        if (lastDim) {
-          setCommandState({
-            baselineDimension: lastDim,
-            basePoint: (lastDim as any).start,
-            dimLinePosition: (lastDim as any).dimLinePosition,
-            offsetMultiplier: 1
-          });
-          setTempPoints([(lastDim as any).start]);
-          setStep(2);
-        } else {
-          console.log('No previous linear or aligned dimension found');
-          cancelCommand();
-        }
+        // Taban nokta seçildi
+        setTempPoints([point]);
+        setCommandState({ ...commandState, basePoint: point });
+        setStep(2);
       } else if (step === 2) {
-        // Create new dimension from baseline
-        const { baselineDimension, basePoint, dimLinePosition, offsetMultiplier } = commandState;
-        const type = (baselineDimension as any).dimType === 'DIMLINEAR' ? 'linear' : 'aligned';
+        // İlk bitiş noktası seçildi
+        setTempPoints([...tempPoints, point]);
+        setStep(3);
+      } else if (step === 3) {
+        // Ölçü çizgisi pozisyonu belirlendi - ilk ölçüyü oluştur
+        const basePoint = tempPoints[0];
+        const endPt = tempPoints[1];
 
-        // Offset each baseline dimension by a fixed amount
-        const offset = 10; // Standard offset between baseline dimensions
-        const newDimLinePosition: Point = [
-          dimLinePosition[0],
-          dimLinePosition[1] - (offset * offsetMultiplier),
-          0
-        ];
+        // Otomatik olarak düz mü eğik mi belirle
+        const dx = Math.abs(endPt[0] - basePoint[0]);
+        const dy = Math.abs(endPt[1] - basePoint[1]);
+        const isHorizontalOrVertical = dx < 0.1 || dy < 0.1 || Math.abs(dx - dy) < 0.1 * Math.max(dx, dy);
+        const dimType = isHorizontalOrVertical ? 'DIMLINEAR' : 'DIMALIGNED';
+        const geoType = dimType === 'DIMLINEAR' ? 'linear' : 'aligned';
 
-        const geometry = calculateDimensionGeometry(basePoint, point, newDimLinePosition, type);
+        const geometry = calculateDimensionGeometry(basePoint, endPt, point, geoType);
 
         addEntity({
           type: 'DIMENSION',
-          dimType: (baselineDimension as any).dimType,
+          dimType: dimType,
+          start: basePoint,
+          end: endPt,
+          dimLinePosition: point,
+          textHeight: 2.5,
+          rotation: geometry.rotation,
+          color: '#ffffff',
+          layer: '0'
+        });
+
+        createHistoryItem('DIMBASELINE' as CommandType);
+
+        // Devam modu için ayarla
+        setCommandState({
+          basePoint: basePoint,
+          dimLinePosition: point,
+          dimType: dimType,
+          offsetMultiplier: 1,
+          hasPreviousDim: true
+        });
+        setTempPoints([basePoint]);
+        setStep(4);
+      } else if (step === 4) {
+        // Devam modu - yeni noktalar seç (hep aynı taban noktasından)
+        const { basePoint, dimLinePosition, dimType, offsetMultiplier } = commandState;
+        const geoType = dimType === 'DIMLINEAR' ? 'linear' : 'aligned';
+
+        // Normal vektör hesapla (offset için)
+        const dx = point[0] - basePoint[0];
+        const dy = point[1] - basePoint[1];
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const normalX = len > 0 ? -dy / len : 0;
+        const normalY = len > 0 ? dx / len : 1;
+
+        // Offset yönünü belirle
+        const origOffsetX = dimLinePosition[0] - basePoint[0];
+        const origOffsetY = dimLinePosition[1] - basePoint[1];
+        const dotProduct = origOffsetX * normalX + origOffsetY * normalY;
+        const direction = dotProduct >= 0 ? 1 : -1;
+
+        // Her baseline için artan offset
+        const offset = 10;
+        const newDimLinePosition: Point = [
+          dimLinePosition[0] + normalX * offset * offsetMultiplier * direction,
+          dimLinePosition[1] + normalY * offset * offsetMultiplier * direction,
+          0
+        ];
+
+        const geometry = calculateDimensionGeometry(basePoint, point, newDimLinePosition, geoType);
+
+        addEntity({
+          type: 'DIMENSION',
+          dimType: dimType || 'DIMLINEAR',
           start: basePoint,
           end: point,
           dimLinePosition: newDimLinePosition,
@@ -3281,14 +4324,12 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
 
         createHistoryItem('DIMBASELINE' as CommandType);
 
-        // Increment offset for next baseline dimension
+        // Sonraki için offset'i artır
         setCommandState({
-          baselineDimension: baselineDimension,
-          basePoint: basePoint,
-          dimLinePosition: dimLinePosition,
+          ...commandState,
           offsetMultiplier: offsetMultiplier + 1
         });
-        // Stay in command for multiple baselines
+        // Step 4'te kal - devam et
       }
     } else if (activeCommand === 'BLOCK') {
       // BLOCK: Define a block from selected entities
@@ -3330,7 +4371,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           onSubmit: (blockName: string) => {
             if (!blockName || blockName.trim() === '') {
               console.log('Block name cannot be empty');
-              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => { } });
               cancelCommand();
               return;
             }
@@ -3371,11 +4412,11 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             // Create block reference at base point
             addEntity({
               type: 'BLOCK_REFERENCE',
-              name: blockName,
+              blockName: blockName,
               position: basePoint,
               rotation: 0,
-              scale: [1, 1, 1],
-              entities: blockEntities,
+              scale: [1, 1, 1] as Point,
+              attributes: { entities: JSON.stringify(blockEntities) },
               color: '#fff',
               layer: '0',
               id: Date.now() + Math.random(),
@@ -3384,10 +4425,10 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             createHistoryItem('BLOCK' as CommandType);
             clearSelection();
             cancelCommand();
-            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => { } });
           },
           onCancel: () => {
-            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => { } });
             cancelCommand();
           }
         });
@@ -3404,35 +4445,35 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           onSubmit: (blockName: string) => {
             if (!blockName || blockName.trim() === '') {
               console.log('Block name cannot be empty');
-              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => { } });
               cancelCommand();
               return;
             }
 
-            // Find block definition
+            // Find block definition - use blockName property (not name)
             const blockDef = entities.find(e =>
-              e.type === 'BLOCK_REFERENCE' && (e as any).name === blockName
+              e.type === 'BLOCK_REFERENCE' && (e as any).blockName === blockName
             );
 
             if (!blockDef) {
               console.log(`Block "${blockName}" not found`);
-              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+              setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => { } });
               cancelCommand();
               return;
             }
 
             setCommandState({ blockDefinition: blockDef, blockName });
             setStep(2);
-            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => { } });
           },
           onCancel: () => {
-            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => {} });
+            setTextDialogState({ isOpen: false, initialText: '', onSubmit: () => { } });
             cancelCommand();
           }
         });
       } else if (step === 2) {
         // Insertion point selected
-        const { blockDefinition, blockName } = commandState;
+        const { blockDefinition } = commandState;
 
         if (!blockDefinition) {
           console.log('No block definition');
@@ -3443,7 +4484,16 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         captureBeforeState();
 
         // Insert block entities at insertion point
-        const blockEntities = (blockDefinition as any).entities || [];
+        // Entities are stored as JSON string in attributes.entities
+        let blockEntities: any[] = [];
+        try {
+          const entitiesJson = (blockDefinition as any).attributes?.entities;
+          if (entitiesJson) {
+            blockEntities = JSON.parse(entitiesJson);
+          }
+        } catch (e) {
+          console.log('Error parsing block entities:', e);
+        }
         const insertionPoint = point;
 
         blockEntities.forEach((ent: any) => {
@@ -3496,32 +4546,28 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             minD = d;
             closestClosedEntity = ent;
           }
-        } else if (ent.type === 'RECTANGLE') {
-          const d = closestPointOnEntity(point[0], point[1], ent);
-          if (d < SELECT_THRESHOLD && d < minD) {
-            minD = d;
-            closestClosedEntity = ent;
-          }
         }
+        // Note: RECTANGLE is stored as LWPOLYLINE, handled above
       });
 
       if (closestClosedEntity) {
         captureBeforeState();
 
         let boundaryEntity: Entity | null = null;
+        const closedEnt = closestClosedEntity as Entity;
 
-        if (closestClosedEntity.type === 'LWPOLYLINE') {
+        if (closedEnt.type === 'LWPOLYLINE') {
           // Copy the polyline
           boundaryEntity = {
-            ...closestClosedEntity,
+            ...closedEnt,
             id: Date.now() + Math.random(),
             color: '#0ff', // Cyan for boundary
             layer: '0',
           };
-        } else if (closestClosedEntity.type === 'CIRCLE') {
+        } else if (closedEnt.type === 'CIRCLE') {
           // Convert circle to polyline with vertices
-          const center = (closestClosedEntity as any).center;
-          const radius = (closestClosedEntity as any).radius;
+          const center = (closedEnt as any).center;
+          const radius = (closedEnt as any).radius;
           const segments = 36;
           const vertices: Point[] = [];
 
@@ -3552,6 +4598,105 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         // Stay in command for multiple boundaries
       } else {
         console.log('No closed boundary found at point');
+      }
+    } else if (activeCommand === 'WBLOCK') {
+      // WBLOCK: Write block to a DXF file
+      // Select a BLOCK_REFERENCE entity and export it
+
+      let minD = Infinity;
+      let closestBlockRef: Entity | null = null;
+      const SELECT_THRESHOLD = 5.0;
+
+      entities.forEach(ent => {
+        if (ent.visible === false) return;
+        if (ent.type !== 'BLOCK_REFERENCE') return;
+
+        const d = closestPointOnEntity(point[0], point[1], ent);
+        if (d < SELECT_THRESHOLD && d < minD) {
+          minD = d;
+          closestBlockRef = ent;
+        }
+      });
+
+      if (closestBlockRef) {
+        const blockRef = closestBlockRef as any;
+        const blockName = blockRef.blockName || 'unnamed_block';
+
+        // Parse entities from JSON string in attributes.entities
+        let blockEntities: any[] = [];
+        try {
+          const entitiesJson = blockRef.attributes?.entities;
+          if (entitiesJson) {
+            blockEntities = JSON.parse(entitiesJson);
+          }
+        } catch (e) {
+          console.log('Error parsing block entities:', e);
+        }
+
+        if (blockEntities.length === 0) {
+          console.log('Block has no entities to export');
+          return;
+        }
+
+        // Convert block entities to absolute positions for export
+        const exportEntities: Entity[] = blockEntities.map((ent: any) => {
+          let exportEnt = { ...ent, id: Date.now() + Math.random() };
+          const pos = blockRef.position;
+
+          if (ent.type === 'LINE') {
+            exportEnt.start = translatePt(ent.start, pos[0], pos[1]);
+            exportEnt.end = translatePt(ent.end, pos[0], pos[1]);
+          } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+            exportEnt.center = translatePt(ent.center, pos[0], pos[1]);
+          } else if (ent.type === 'LWPOLYLINE') {
+            exportEnt.vertices = ent.vertices.map((v: Point) => translatePt(v, pos[0], pos[1]));
+          } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+            exportEnt.position = translatePt(ent.position, pos[0], pos[1]);
+          }
+
+          return exportEnt as Entity;
+        });
+
+        // Generate DXF content
+        let dxfContent = '0\nSECTION\n2\nHEADER\n0\nENDSEC\n';
+        dxfContent += '0\nSECTION\n2\nENTITIES\n';
+
+        exportEntities.forEach((ent: any) => {
+          if (ent.type === 'LINE') {
+            dxfContent += '0\nLINE\n8\n0\n';
+            dxfContent += `10\n${ent.start[0]}\n20\n${ent.start[1]}\n30\n${ent.start[2] || 0}\n`;
+            dxfContent += `11\n${ent.end[0]}\n21\n${ent.end[1]}\n31\n${ent.end[2] || 0}\n`;
+          } else if (ent.type === 'CIRCLE') {
+            dxfContent += '0\nCIRCLE\n8\n0\n';
+            dxfContent += `10\n${ent.center[0]}\n20\n${ent.center[1]}\n30\n${ent.center[2] || 0}\n`;
+            dxfContent += `40\n${ent.radius}\n`;
+          } else if (ent.type === 'LWPOLYLINE') {
+            dxfContent += '0\nLWPOLYLINE\n8\n0\n';
+            dxfContent += `90\n${ent.vertices.length}\n`;
+            dxfContent += ent.closed ? '70\n1\n' : '70\n0\n';
+            ent.vertices.forEach((v: Point) => {
+              dxfContent += `10\n${v[0]}\n20\n${v[1]}\n`;
+            });
+          }
+        });
+
+        dxfContent += '0\nENDSEC\n0\nEOF\n';
+
+        // Download the file
+        const blob = new Blob([dxfContent], { type: 'application/dxf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${blockName}.dxf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        console.log(`Block "${blockName}" exported as DXF file`);
+        // Stay in WBLOCK mode for multiple exports
+      } else {
+        console.log('No BLOCK_REFERENCE found at point. Create a block first with BLOCK command.');
       }
     }
   }, [
@@ -3872,6 +5017,77 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     clearSelection,
   ]);
 
+  // Print Preview
+  const [printPreviewMode, setPrintPreviewMode] = useState(false);
+
+  const startPrintPreview = useCallback(() => {
+    setPrintDialogState({ isOpen: false });
+    setPrintPreviewMode(true);
+    // Note: Zoom to print area is handled by PrintDialog's applyPlotAreaZoom before calling this
+  }, []);
+
+  const finishPrintPreview = useCallback(() => {
+    setPrintPreviewMode(false);
+    setPrintDialogState({ isOpen: true });
+  }, []);
+
+  // Helper: Calculate bounding box of all visible entities
+  const getEntitiesBoundingBox = useCallback((): { min: Point; max: Point } | null => {
+    const visibleEntities = entities.filter(e => e.visible !== false);
+    if (visibleEntities.length === 0) return null;
+
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+
+    visibleEntities.forEach(ent => {
+      if (ent.type === 'LINE') {
+        const line = ent as any;
+        minX = Math.min(minX, line.start[0], line.end[0]);
+        minY = Math.min(minY, line.start[1], line.end[1]);
+        maxX = Math.max(maxX, line.start[0], line.end[0]);
+        maxY = Math.max(maxY, line.start[1], line.end[1]);
+      } else if (ent.type === 'CIRCLE' || ent.type === 'DONUT') {
+        const c = ent as any;
+        const r = c.outerRadius || c.radius || 0;
+        minX = Math.min(minX, c.center[0] - r);
+        minY = Math.min(minY, c.center[1] - r);
+        maxX = Math.max(maxX, c.center[0] + r);
+        maxY = Math.max(maxY, c.center[1] + r);
+      } else if (ent.type === 'ARC') {
+        const arc = ent as any;
+        minX = Math.min(minX, arc.center[0] - arc.radius);
+        minY = Math.min(minY, arc.center[1] - arc.radius);
+        maxX = Math.max(maxX, arc.center[0] + arc.radius);
+        maxY = Math.max(maxY, arc.center[1] + arc.radius);
+      } else if (ent.type === 'ELLIPSE') {
+        const e = ent as any;
+        minX = Math.min(minX, e.center[0] - e.rx);
+        minY = Math.min(minY, e.center[1] - e.ry);
+        maxX = Math.max(maxX, e.center[0] + e.rx);
+        maxY = Math.max(maxY, e.center[1] + e.ry);
+      } else if (ent.type === 'LWPOLYLINE') {
+        const poly = ent as any;
+        poly.vertices.forEach((v: Point) => {
+          minX = Math.min(minX, v[0]);
+          minY = Math.min(minY, v[1]);
+          maxX = Math.max(maxX, v[0]);
+          maxY = Math.max(maxY, v[1]);
+        });
+      } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+        const p = (ent as any).position;
+        if (p) {
+          minX = Math.min(minX, p[0]);
+          minY = Math.min(minY, p[1]);
+          maxX = Math.max(maxX, p[0]);
+          maxY = Math.max(maxY, p[1]);
+        }
+      }
+    });
+
+    if (minX === Infinity) return null;
+    return { min: [minX, minY, 0], max: [maxX, maxY, 0] };
+  }, [entities]);
+
   // Memoize context value to prevent unnecessary re-renders
   const value: DrawingContextValue = useMemo(() => ({
     // Sheet/Tab management
@@ -3887,6 +5103,20 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     isModified,
     newFile,
     loadEntities,
+    loadProject,
+    // Layers
+    layerDialogState,
+    setLayerDialogState,
+    layers,
+    activeLayerId,
+    addLayer,
+    removeLayer,
+    updateLayer,
+    setActiveLayerId,
+    activeLineType,
+    setActiveLineType,
+    activeLineWeight,
+    setActiveLineWeight,
     baseUnit,
     setBaseUnit,
     drawingUnit,
@@ -3917,9 +5147,15 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     toggleSelection,
     clearSelection,
     selectAll,
+    hoveredEntityId,
+    setHoveredEntityId,
     osnapEnabled,
     toggleOsnap,
     activeSnap,
+    polarTrackingEnabled,
+    togglePolarTracking,
+    polarTrackingAngle,
+    setPolarTrackingAngle,
     activeGrip,
     activateGrip,
     cancelGrip,
@@ -3948,16 +5184,40 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     setTextDialogState,
     tableDialogState,
     setTableDialogState,
+    dimensionSettingsDialogState,
+    setDimensionSettingsDialogState,
+    dimensionEditDialogState,
+    setDimensionEditDialogState,
+    // Print System
+    printDialogState,
+    setPrintDialogState,
+    printWindowMode,
+    startPrintWindow,
+    finishPrintWindow,
+    printWindowBox,
+    setPrintWindowBox,
+    applyPrintWindow,
+    printPreviewMode,
+    startPrintPreview,
+    finishPrintPreview,
+    getEntitiesBoundingBox,
+    gridEnabled,
+    toggleGrid,
+    orthoEnabled,
+    toggleOrtho,
   }), [
     sheets, activeSheetId, addSheet, removeSheet, switchSheet, renameSheet,
-    fileName, isModified, newFile, loadEntities,
+    fileName, isModified, newFile, loadEntities, loadProject,
+    layerDialogState, setLayerDialogState, layers, activeLayerId, addLayer, removeLayer, updateLayer, setActiveLayerId,
     baseUnit, drawingUnit, drawingScale, scaleFactor,
     entities, addEntity, updateEntity, deleteEntities, getEntity,
     activeCommand, startCommand, cancelCommand,
     step, tempPoints, cursorPosition, commandState,
     handleCommandInput, handleMouseMove, handleValueInput, finishPolyline,
-    selectedIds, toggleSelection, clearSelection, selectAll,
+    selectedIds, toggleSelection, clearSelection, selectAll, hoveredEntityId, setHoveredEntityId,
     osnapEnabled, toggleOsnap, activeSnap,
+    gridEnabled, toggleGrid, orthoEnabled, toggleOrtho,
+    polarTrackingEnabled, togglePolarTracking, polarTrackingAngle, setPolarTrackingAngle,
     activeGrip, activateGrip, cancelGrip, selectionBox,
     handlePointerDown, handlePointerUp,
     undo, redo, canUndo, canRedo,
@@ -3965,7 +5225,12 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     zoomInTrigger, triggerZoomIn, zoomOutTrigger, triggerZoomOut,
     zoomWindowMode, startZoomWindow, cancelZoomWindow, zoomWindowBox, applyZoomWindow, zoomWindowTrigger,
     textDialogState, setTextDialogState,
-    tableDialogState, setTableDialogState
+    tableDialogState, setTableDialogState,
+    dimensionSettingsDialogState, setDimensionSettingsDialogState,
+    dimensionEditDialogState, setDimensionEditDialogState,
+    printDialogState, setPrintDialogState,
+    printWindowMode, startPrintWindow, finishPrintWindow, printWindowBox, setPrintWindowBox, applyPrintWindow,
+    printPreviewMode, startPrintPreview, finishPrintPreview
   ]);
 
   return (

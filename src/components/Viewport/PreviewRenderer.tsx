@@ -2,6 +2,7 @@ import React from 'react';
 import { Line } from '@react-three/drei';
 import { useDrawing } from '../../context/DrawingContext';
 import type { Point } from '../../types/entities';
+import { DEFAULT_DIMENSION_SETTINGS } from '../../types/dimensionSettings';
 
 // Daire için noktalar oluştur
 const generateCirclePoints = (center: Point, radius: number, segments: number = 64): [number, number, number][] => {
@@ -58,7 +59,7 @@ const generateEllipsePoints = (
 };
 
 const PreviewRenderer = () => {
-    const { activeCommand, tempPoints, cursorPosition, step, commandState, entities } = useDrawing();
+    const { activeCommand, tempPoints, cursorPosition, step, commandState } = useDrawing();
 
     if (!activeCommand) return null;
 
@@ -75,8 +76,8 @@ const PreviewRenderer = () => {
         return (
             <Line
                 points={[
-                    [lastPoint[0], lastPoint[1], 0.05],
-                    [cursorPosition[0], cursorPosition[1], 0.05]
+                    [lastPoint[0], lastPoint[1], 0.06],
+                    [cursorPosition[0], cursorPosition[1], 0.06]
                 ]}
                 color={previewColor}
                 lineWidth={2}
@@ -365,8 +366,9 @@ const PreviewRenderer = () => {
             const dimStart: [number, number, number] = [start[0] + norm[0] * offset, start[1] + norm[1] * offset, 0.05];
             const dimEnd: [number, number, number] = [end[0] + norm[0] * offset, end[1] + norm[1] * offset, 0.05];
 
-            // Extension lines and Arrows
-            const arrowSize = 5; // Default big arrow size
+            // Extension lines and Arrows - use settings
+            const settings = DEFAULT_DIMENSION_SETTINGS;
+            const arrowSize = settings.arrowSize * 2; // Preview'da biraz büyük göster
             const angle = Math.atan2(dimEnd[1] - dimStart[1], dimEnd[0] - dimStart[0]);
             const arrowAngle = Math.PI / 6;
 
@@ -410,74 +412,345 @@ const PreviewRenderer = () => {
         }
     }
 
-    // DIMANGULAR preview
-    if (activeCommand === 'DIMANGULAR') {
+    // DIMCONTINUE preview
+    if (activeCommand === 'DIMCONTINUE') {
         const previewElements: React.ReactElement[] = [];
 
-        if (step === 2 && tempPoints.length === 1) {
-            // Center'dan P1'e çizgi
+        if (step === 1) {
+            // İlk nokta seçiliyor - sadece crosshair
+            return null;
+        } else if (step === 2 && tempPoints.length === 1) {
+            // İkinci nokta seçiliyor
             previewElements.push(
                 <Line
-                    key="ang-line1"
-                    points={[
-                        [tempPoints[0][0], tempPoints[0][1], 0.05],
-                        [cursorPosition[0], cursorPosition[1], 0.05]
-                    ]}
+                    key="measure-line"
+                    points={[[tempPoints[0][0], tempPoints[0][1], 0.05], [cursorPosition[0], cursorPosition[1], 0.05]]}
                     color={previewColor}
                     lineWidth={2}
                     opacity={opacity}
                     transparent
+                    dashed
+                    dashSize={4}
+                    gapSize={2}
                 />
             );
-        } else if (step === 3 && commandState.line1Id && commandState.line2Id) {
-            // Arc önizlemesi - both lines selected, show arc preview
-            const line1 = entities.find(e => e.id === commandState.line1Id) as any;
-            const line2 = entities.find(e => e.id === commandState.line2Id) as any;
+        } else if (step === 3 && tempPoints.length === 2) {
+            // Ölçü pozisyonu belirleniyor - tam preview
+            const start = tempPoints[0];
+            const end = tempPoints[1];
+            const dimPos = cursorPosition;
 
-            if (line1 && line2) {
-                // Highlight selected lines
-                previewElements.push(
-                    <Line key="sel-line1" points={[line1.start, line1.end]} color="#00ff00" lineWidth={4} opacity={0.9} transparent />,
-                    <Line key="sel-line2" points={[line2.start, line2.end]} color="#00ff00" lineWidth={4} opacity={0.9} transparent />
-                );
+            const dir = [end[0] - start[0], end[1] - start[1]];
+            const len = Math.sqrt(dir[0] * dir[0] + dir[1] * dir[1]);
+            const norm = len > 0 ? [-dir[1] / len, dir[0] / len] : [0, 1];
 
-                // Calculate intersection
-                const x1 = line1.start[0], y1 = line1.start[1];
-                const x2 = line1.end[0], y2 = line1.end[1];
-                const x3 = line2.start[0], y3 = line2.start[1];
-                const x4 = line2.end[0], y4 = line2.end[1];
+            const dx = dimPos[0] - start[0];
+            const dy = dimPos[1] - start[1];
+            const offset = dx * norm[0] + dy * norm[1];
 
-                const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-                let center: [number, number, number];
-                if (Math.abs(denom) < 0.0001) {
-                    center = [(x1 + x2 + x3 + x4) / 4, (y1 + y2 + y3 + y4) / 4, 0];
-                } else {
-                    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
-                    center = [x1 + t * (x2 - x1), y1 + t * (y2 - y1), 0];
-                }
+            const dimStart: [number, number, number] = [start[0] + norm[0] * offset, start[1] + norm[1] * offset, 0.05];
+            const dimEnd: [number, number, number] = [end[0] + norm[0] * offset, end[1] + norm[1] * offset, 0.05];
 
-                const angle1 = Math.atan2(y2 - y1, x2 - x1);
-                const angle2 = Math.atan2(y4 - y3, x4 - x3);
-                let startAngle = angle1 < 0 ? angle1 + Math.PI * 2 : angle1;
-                let endAngle = angle2 < 0 ? angle2 + Math.PI * 2 : angle2;
+            previewElements.push(
+                <Line key="ext1" points={[[start[0], start[1], 0.05], dimStart]} color={previewColor} lineWidth={1} opacity={opacity} transparent />,
+                <Line key="ext2" points={[[end[0], end[1], 0.05], dimEnd]} color={previewColor} lineWidth={1} opacity={opacity} transparent />,
+                <Line key="dimline" points={[dimStart, dimEnd]} color={previewColor} lineWidth={2} opacity={opacity} transparent />
+            );
+        } else if (step === 4 && commandState?.basePoint && commandState?.dimLinePosition) {
+            // Devam modu
+            const basePoint = commandState.basePoint as Point;
+            const dimLinePosition = commandState.dimLinePosition as Point;
+            // dimType is stored for reference but we use geometric calculation
 
-                const radius = Math.sqrt(Math.pow(cursorPosition[0] - center[0], 2) + Math.pow(cursorPosition[1] - center[1], 2));
-                const arcPoints = generateArcPoints(center, radius, startAngle, endAngle);
+            // Calculate dimension preview
+            const dx = cursorPosition[0] - basePoint[0];
+            const dy = cursorPosition[1] - basePoint[1];
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const norm = len > 0 ? [-dy / len, dx / len] : [0, 1];
 
-                previewElements.push(
-                    <Line key="ang-arc" points={arcPoints} color={previewColor} lineWidth={2} opacity={opacity} transparent />
-                );
-            }
+            const offsetDist = (dimLinePosition[0] - basePoint[0]) * norm[0] + (dimLinePosition[1] - basePoint[1]) * norm[1];
+
+            const dimStart: [number, number, number] = [basePoint[0] + norm[0] * offsetDist, basePoint[1] + norm[1] * offsetDist, 0.05];
+            const dimEnd: [number, number, number] = [cursorPosition[0] + norm[0] * offsetDist, cursorPosition[1] + norm[1] * offsetDist, 0.05];
+
+            previewElements.push(
+                <Line key="ext1" points={[[basePoint[0], basePoint[1], 0.05], dimStart]} color={previewColor} lineWidth={1} opacity={opacity} transparent />,
+                <Line key="ext2" points={[[cursorPosition[0], cursorPosition[1], 0.05], dimEnd]} color={previewColor} lineWidth={1} opacity={opacity} transparent />,
+                <Line key="dimline" points={[dimStart, dimEnd]} color={previewColor} lineWidth={2} opacity={opacity} transparent />,
+                <Line key="measure" points={[[basePoint[0], basePoint[1], 0.05], [cursorPosition[0], cursorPosition[1], 0.05]]} color={previewColor} lineWidth={1} opacity={0.4} transparent dashed dashSize={3} gapSize={2} />
+            );
         }
 
-        // Step 1 veya 2'de seçilmiş çizgiyi göster
-        if (step >= 2 && commandState.line1Id) {
-            const line1 = entities.find(e => e.id === commandState.line1Id) as any;
-            if (line1) {
-                previewElements.push(
-                    <Line key="sel-line1-step" points={[line1.start, line1.end]} color="#00ff00" lineWidth={4} opacity={0.9} transparent />
-                );
+        return previewElements.length > 0 ? <group>{previewElements}</group> : null;
+    }
+
+    // DIMBASELINE preview
+    if (activeCommand === 'DIMBASELINE') {
+        const previewElements: React.ReactElement[] = [];
+
+        if (step === 1) {
+            // Taban nokta seçiliyor
+            return null;
+        } else if (step === 2 && tempPoints.length === 1) {
+            // İlk bitiş noktası seçiliyor
+            previewElements.push(
+                <Line
+                    key="measure-line"
+                    points={[[tempPoints[0][0], tempPoints[0][1], 0.05], [cursorPosition[0], cursorPosition[1], 0.05]]}
+                    color={previewColor}
+                    lineWidth={2}
+                    opacity={opacity}
+                    transparent
+                    dashed
+                    dashSize={4}
+                    gapSize={2}
+                />,
+                // Base point marker
+                <mesh key="base-marker" position={[tempPoints[0][0], tempPoints[0][1], 0.1]}>
+                    <circleGeometry args={[2, 16]} />
+                    <meshBasicMaterial color="#ffff00" transparent opacity={0.8} />
+                </mesh>
+            );
+        } else if (step === 3 && tempPoints.length === 2) {
+            // Ölçü pozisyonu belirleniyor
+            const basePoint = tempPoints[0];
+            const end = tempPoints[1];
+            const dimPos = cursorPosition;
+
+            const dir = [end[0] - basePoint[0], end[1] - basePoint[1]];
+            const len = Math.sqrt(dir[0] * dir[0] + dir[1] * dir[1]);
+            const norm = len > 0 ? [-dir[1] / len, dir[0] / len] : [0, 1];
+
+            const dx = dimPos[0] - basePoint[0];
+            const dy = dimPos[1] - basePoint[1];
+            const offset = dx * norm[0] + dy * norm[1];
+
+            const dimStart: [number, number, number] = [basePoint[0] + norm[0] * offset, basePoint[1] + norm[1] * offset, 0.05];
+            const dimEnd: [number, number, number] = [end[0] + norm[0] * offset, end[1] + norm[1] * offset, 0.05];
+
+            previewElements.push(
+                <Line key="ext1" points={[[basePoint[0], basePoint[1], 0.05], dimStart]} color={previewColor} lineWidth={1} opacity={opacity} transparent />,
+                <Line key="ext2" points={[[end[0], end[1], 0.05], dimEnd]} color={previewColor} lineWidth={1} opacity={opacity} transparent />,
+                <Line key="dimline" points={[dimStart, dimEnd]} color={previewColor} lineWidth={2} opacity={opacity} transparent />,
+                <mesh key="base-marker" position={[basePoint[0], basePoint[1], 0.1]}>
+                    <circleGeometry args={[2, 16]} />
+                    <meshBasicMaterial color="#ffff00" transparent opacity={0.8} />
+                </mesh>
+            );
+        } else if (step === 4 && commandState?.basePoint && commandState?.dimLinePosition) {
+            // Devam modu
+            const basePoint = commandState.basePoint as Point;
+            const dimLinePosition = commandState.dimLinePosition as Point;
+            const offsetMultiplier = commandState.offsetMultiplier || 1;
+
+            const dx = cursorPosition[0] - basePoint[0];
+            const dy = cursorPosition[1] - basePoint[1];
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const norm = len > 0 ? [-dy / len, dx / len] : [0, 1];
+
+            const origOffsetX = dimLinePosition[0] - basePoint[0];
+            const origOffsetY = dimLinePosition[1] - basePoint[1];
+            const dotProduct = origOffsetX * norm[0] + origOffsetY * norm[1];
+            const direction = dotProduct >= 0 ? 1 : -1;
+
+            const offset = 10;
+            const newDimLineX = dimLinePosition[0] + norm[0] * offset * offsetMultiplier * direction;
+            const newDimLineY = dimLinePosition[1] + norm[1] * offset * offsetMultiplier * direction;
+            const baseDimDist = (newDimLineX - basePoint[0]) * norm[0] + (newDimLineY - basePoint[1]) * norm[1];
+
+            const dimStart: [number, number, number] = [basePoint[0] + norm[0] * baseDimDist, basePoint[1] + norm[1] * baseDimDist, 0.05];
+            const dimEnd: [number, number, number] = [cursorPosition[0] + norm[0] * baseDimDist, cursorPosition[1] + norm[1] * baseDimDist, 0.05];
+
+            previewElements.push(
+                <Line key="ext1" points={[[basePoint[0], basePoint[1], 0.05], dimStart]} color={previewColor} lineWidth={1} opacity={opacity} transparent />,
+                <Line key="ext2" points={[[cursorPosition[0], cursorPosition[1], 0.05], dimEnd]} color={previewColor} lineWidth={1} opacity={opacity} transparent />,
+                <Line key="dimline" points={[dimStart, dimEnd]} color={previewColor} lineWidth={2} opacity={opacity} transparent />,
+                <mesh key="base-marker" position={[basePoint[0], basePoint[1], 0.1]}>
+                    <circleGeometry args={[2, 16]} />
+                    <meshBasicMaterial color="#ffff00" transparent opacity={0.8} />
+                </mesh>
+            );
+        }
+
+        return previewElements.length > 0 ? <group>{previewElements}</group> : null;
+    }
+
+    // DIMANGULAR preview
+    if (activeCommand === 'DIMANGULAR') {
+        const previewElements: React.ReactElement[] = [];
+
+        // Step 1: İlk çizgi seçilmemiş - highlight yapma
+        // Step 2: İkinci çizgi seçiliyor - ilk çizgiyi highlight yap
+        if (step === 2 && commandState.line1Start && commandState.line1End) {
+            const line1Start = commandState.line1Start as Point;
+            const line1End = commandState.line1End as Point;
+            previewElements.push(
+                <Line
+                    key="sel-line1"
+                    points={[[line1Start[0], line1Start[1], 0.1], [line1End[0], line1End[1], 0.1]]}
+                    color="#00ff00"
+                    lineWidth={4}
+                    opacity={0.9}
+                    transparent
+                />
+            );
+        }
+
+        // Step 3: Pozisyon belirleniyor - tam önizleme
+        if (step === 3 && commandState.line1Start && commandState.line1End && commandState.line2Start && commandState.line2End) {
+            const line1Start = commandState.line1Start as Point;
+            const line1End = commandState.line1End as Point;
+            const line2Start = commandState.line2Start as Point;
+            const line2End = commandState.line2End as Point;
+
+            // Her iki çizgiyi de highlight yap
+            previewElements.push(
+                <Line
+                    key="sel-line1"
+                    points={[[line1Start[0], line1Start[1], 0.1], [line1End[0], line1End[1], 0.1]]}
+                    color="#00ff00"
+                    lineWidth={4}
+                    opacity={0.9}
+                    transparent
+                />,
+                <Line
+                    key="sel-line2"
+                    points={[[line2Start[0], line2Start[1], 0.1], [line2End[0], line2End[1], 0.1]]}
+                    color="#00ff00"
+                    lineWidth={4}
+                    opacity={0.9}
+                    transparent
+                />
+            );
+
+            // Kesişim noktasını hesapla
+            const x1 = line1Start[0], y1 = line1Start[1];
+            const x2 = line1End[0], y2 = line1End[1];
+            const x3 = line2Start[0], y3 = line2Start[1];
+            const x4 = line2End[0], y4 = line2End[1];
+
+            const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+            let center: [number, number, number];
+            if (Math.abs(denom) < 0.0001) {
+                center = [(x1 + x2 + x3 + x4) / 4, (y1 + y2 + y3 + y4) / 4, 0.05];
+            } else {
+                const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+                center = [x1 + t * (x2 - x1), y1 + t * (y2 - y1), 0.05];
             }
+
+            // Çizgi açılarını hesapla
+            const angle1 = Math.atan2(y2 - y1, x2 - x1);
+            const angle2 = Math.atan2(y4 - y3, x4 - x3);
+
+            // Normalize angles to 0-2PI
+            let startAngle = angle1 < 0 ? angle1 + Math.PI * 2 : angle1;
+            let endAngle = angle2 < 0 ? angle2 + Math.PI * 2 : angle2;
+
+            // Yarıçap - cursor'dan center'a mesafe
+            const radius = Math.max(Math.hypot(cursorPosition[0] - center[0], cursorPosition[1] - center[1]), 15);
+
+            // Kullanıcının tıkladığı pozisyona göre hangi açıyı ölçeceğimizi belirle
+            const clickAngle = Math.atan2(cursorPosition[1] - center[1], cursorPosition[0] - center[0]);
+            let clickAngleNorm = clickAngle < 0 ? clickAngle + Math.PI * 2 : clickAngle;
+
+            // Açı farkını hesapla
+            let diff = endAngle - startAngle;
+            if (diff < 0) diff += Math.PI * 2;
+
+            // Cursor hangi açı bölgesinde?
+            const isInFirstArc = (() => {
+                let a = clickAngleNorm;
+                let s = startAngle;
+                let e = endAngle;
+                // Normalize
+                while (a < 0) a += Math.PI * 2;
+                while (s < 0) s += Math.PI * 2;
+                while (e < 0) e += Math.PI * 2;
+                while (a >= Math.PI * 2) a -= Math.PI * 2;
+                while (s >= Math.PI * 2) s -= Math.PI * 2;
+                while (e >= Math.PI * 2) e -= Math.PI * 2;
+
+                if (s < e) {
+                    return a >= s && a <= e;
+                } else {
+                    return a >= s || a <= e;
+                }
+            })();
+
+            let arcStartAngle: number;
+            let arcEndAngle: number;
+
+            if (isInFirstArc) {
+                arcStartAngle = startAngle;
+                arcEndAngle = endAngle;
+            } else {
+                arcStartAngle = endAngle;
+                arcEndAngle = startAngle + Math.PI * 2;
+            }
+
+            // Arc noktalarını oluştur
+            const arcPoints: [number, number, number][] = [];
+            const segments = 30;
+            for (let i = 0; i <= segments; i++) {
+                const ang = arcStartAngle + ((arcEndAngle - arcStartAngle) * i / segments);
+                arcPoints.push([
+                    center[0] + Math.cos(ang) * radius,
+                    center[1] + Math.sin(ang) * radius,
+                    0.1
+                ]);
+            }
+
+            // Arc preview
+            previewElements.push(
+                <Line key="ang-arc" points={arcPoints} color={previewColor} lineWidth={2} opacity={opacity} transparent />
+            );
+
+            // Extension lines - from center outward along start/end angles (solid lines)
+            const extOffset = 2; // Small offset from center
+            const extExtend = 3; // Extend past arc
+
+            const ext1Start: [number, number, number] = [
+                center[0] + Math.cos(arcStartAngle) * extOffset,
+                center[1] + Math.sin(arcStartAngle) * extOffset,
+                0.1
+            ];
+            const ext1End: [number, number, number] = [
+                center[0] + Math.cos(arcStartAngle) * (radius + extExtend),
+                center[1] + Math.sin(arcStartAngle) * (radius + extExtend),
+                0.1
+            ];
+
+            const ext2Start: [number, number, number] = [
+                center[0] + Math.cos(arcEndAngle) * extOffset,
+                center[1] + Math.sin(arcEndAngle) * extOffset,
+                0.1
+            ];
+            const ext2End: [number, number, number] = [
+                center[0] + Math.cos(arcEndAngle) * (radius + extExtend),
+                center[1] + Math.sin(arcEndAngle) * (radius + extExtend),
+                0.1
+            ];
+
+            previewElements.push(
+                <Line key="ext1" points={[ext1Start, ext1End]} color={previewColor} lineWidth={1} opacity={opacity} transparent />,
+                <Line key="ext2" points={[ext2Start, ext2End]} color={previewColor} lineWidth={1} opacity={opacity} transparent />
+            );
+
+            // Açı değeri - küçük marker ile göster
+            const midAngle = arcStartAngle + (arcEndAngle - arcStartAngle) / 2;
+            const textRadius = radius + 3;
+            const textPos: [number, number, number] = [
+                center[0] + Math.cos(midAngle) * textRadius,
+                center[1] + Math.sin(midAngle) * textRadius,
+                0.1
+            ];
+
+            previewElements.push(
+                <mesh key="angle-marker" position={textPos}>
+                    <circleGeometry args={[1.5, 16]} />
+                    <meshBasicMaterial color={previewColor} transparent opacity={0.7} />
+                </mesh>
+            );
         }
 
         return <group>{previewElements}</group>;

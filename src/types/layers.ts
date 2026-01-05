@@ -3,6 +3,7 @@
 import type { EntityID } from './entities';
 
 export interface Layer {
+  id: string;
   name: string;
   color: string;
   linetype: string;
@@ -23,6 +24,7 @@ export interface LayerManagerState {
 
 // Default layer (layer 0 cannot be deleted)
 export const DEFAULT_LAYER: Layer = {
+  id: '0',
   name: '0',
   color: '#ffffff',
   linetype: 'CONTINUOUS',

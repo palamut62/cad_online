@@ -65,7 +65,17 @@ export const getPatternTexture = (patternName: string, color: string, scale: num
     const config = PRESET_PATTERNS[patternName];
     if (!config) return null;
 
-    const SIZE = 64;
+    let SIZE = 64;
+
+    // Special handling for seamless Honeycomb
+    // Period X: 3 * hexSize
+    // Period Y: 1.75 * hexSize (approximation of sqrt(3)=1.732 for seamless loop)
+    // We choose hexSize = 20
+    // Period X = 60, Period Y = 35. LCM = 420.
+    if (config.type === 'honeycomb') {
+        SIZE = 420;
+    }
+
     const canvas = document.createElement('canvas');
     canvas.width = SIZE;
     canvas.height = SIZE;
@@ -81,7 +91,15 @@ export const getPatternTexture = (patternName: string, color: string, scale: num
     ctx.lineWidth = 1.5;
     ctx.lineCap = 'round';
 
-    const spacing = Math.max(6, 12 / scale);
+    // Calculate spacing based on preset config
+    let spacing = (config.spacing || 0.1) * (config.type === 'honeycomb' ? 100 : SIZE);
+    if (scale !== 1) spacing /= scale;
+    spacing = Math.max(4, spacing);
+
+    // Override spacing for Honeycomb to ensure seamless fit
+    if (config.type === 'honeycomb') {
+        spacing = 20; // Fixed hexSize for seamless 420x420 texture
+    }
 
     switch (config.type) {
         case 'lines':
@@ -201,11 +219,15 @@ function drawZigzag(ctx: CanvasRenderingContext2D, size: number, spacing: number
 
 function drawHoneycomb(ctx: CanvasRenderingContext2D, size: number, spacing: number) {
     const hexSize = spacing;
-    const h = hexSize * Math.sqrt(3) / 2;
+    // Use distorted height for seamless tiling: h = hexSize * 1.75 / 2
+    // True height would be hexSize * sqrt(3) / 2 ~= hexSize * 1.732 / 2
+    // 1.75 allows integer period with period Y = 3.5r = 1.75d
+    const h = hexSize * 1.75 / 2;
 
     ctx.beginPath();
-    for (let row = -1; row < size / h + 1; row++) {
-        for (let col = -1; col < size / (hexSize * 1.5) + 1; col++) {
+    // Draw expanding beyond bounds to ensure edges are covered
+    for (let row = -2; row < size / h + 2; row++) {
+        for (let col = -2; col < size / (hexSize * 1.5) + 2; col++) {
             const cx = col * hexSize * 1.5;
             const cy = row * h * 2 + (col % 2 === 0 ? 0 : h);
             drawHexagonShape(ctx, cx, cy, hexSize / 2);

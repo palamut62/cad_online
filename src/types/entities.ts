@@ -196,6 +196,21 @@ export interface DimensionEntity extends BaseEntity {
   center?: Point;
   startAngle?: number;
   endAngle?: number;
+
+  // Extended dimension settings
+  arrowStyle?: 'closed' | 'open' | 'dot' | 'arrowDot' | 'architectural' | 'none';
+  arrowDirection?: 'inside' | 'outside' | 'both';
+  arrowSizeMultiplier?: number;
+  dimLineColor?: string;
+  extLineColor?: string;
+  arrowColor?: string;
+  textColor?: string;
+  dimLineWeight?: number;
+  extLineWeight?: number;
+  textAlignment?: 'above' | 'below' | 'center' | 'left' | 'right';
+  precision?: string; // Decimal format
+  unit?: string; // Unit for display
+  showUnit?: boolean;
 }
 
 export type DimensionType =

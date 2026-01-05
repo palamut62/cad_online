@@ -1,17 +1,157 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import './Ribbon.css';
 import {
-    FaRegCircle, FaDrawPolygon, FaFolderOpen, FaSave, FaFile, FaFileExport,
-    FaRegSquare, FaBezierCurve, FaCrosshairs, FaArrowsAlt, FaCopy,
-    FaRedo, FaExpand, FaExchangeAlt, FaEraser, FaStream, FaExclamationTriangle, FaFillDrip,
-    FaFont, FaTable
+    FaRegCircle, FaRegSquare, FaBezierCurve, FaArrowsAlt, FaCopy,
+    FaRedo, FaExpand, FaExchangeAlt, FaEraser, FaFillDrip,
+    FaFont, FaTable, FaProjectDiagram, FaCut, FaObjectUngroup,
+    FaFolderOpen, FaSave, FaFile, FaFileExport, FaExclamationTriangle
 } from 'react-icons/fa';
-import { MdPolyline, MdTimeline } from 'react-icons/md';
-import { TbOvalVertical, TbLine } from 'react-icons/tb';
+import { MdPolyline } from 'react-icons/md';
+import { TbLine } from 'react-icons/tb';
 import { useDrawing } from '../../context/DrawingContext';
 import { parseDxf } from '../../utils/dxfLoader';
 import { exportDXF } from '../../utils/dxfExporter';
 import { PRESET_PATTERNS, PATTERN_CATEGORIES, getPatternPreview } from '../../utils/hatchPatterns';
+
+// Helper Component for Visual Line Type Selection
+// Helper Component for Visual Line Type Selection
+const LineTypeSelector = ({ value, onChange }: { value: string, onChange: (val: string) => void }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const options = [
+        { value: 'continuous', label: 'Sürekli', pattern: 'solid' },
+        { value: 'dashed', label: 'Kesik', pattern: 'dashed' },
+        { value: 'dotted', label: 'Noktalı', pattern: 'dotted' },
+        { value: 'dashdot', label: 'Kesik-Nokta', pattern: 'dashed' },
+        { value: 'center', label: 'Merkez', pattern: 'dashed' },
+        { value: 'hidden', label: 'Gizli', pattern: 'dashed' },
+        { value: 'phantom', label: 'Hayalet', pattern: 'dashed' },
+    ];
+
+    const renderPreview = (type: string) => {
+        let strokeDasharray = 'none';
+        switch (type) {
+            case 'dashed': strokeDasharray = '6, 3'; break;
+            case 'dotted': strokeDasharray = '1, 2'; break;
+            case 'dashdot': strokeDasharray = '6, 2, 1, 2'; break;
+            case 'center': strokeDasharray = '10, 3, 2, 3'; break;
+            case 'hidden': strokeDasharray = '3, 3'; break;
+            case 'phantom': strokeDasharray = '10, 2, 1, 2, 1, 2'; break;
+            case 'continuous': strokeDasharray = 'none'; break;
+            default: strokeDasharray = 'none';
+        }
+
+        return (
+            <svg width="60" height="2" style={{ marginRight: '8px' }}>
+                <line x1="0" y1="1" x2="60" y2="1" stroke="currentColor" strokeWidth="1" strokeDasharray={strokeDasharray} />
+            </svg>
+        );
+    };
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const selectedOption = options.find(o => o.value === value) || options[0];
+
+    return (
+        <div className="property-selector" ref={dropdownRef}>
+            <div className="property-trigger" onClick={() => setIsOpen(!isOpen)}>
+                <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                    {renderPreview(selectedOption.value)}
+                    <span className="property-val-label">{selectedOption.label}</span>
+                </div>
+                <span className="material-icons" style={{ fontSize: '14px' }}>arrow_drop_down</span>
+            </div>
+
+            {isOpen && (
+                <div className="property-dropdown">
+                    {options.map(opt => (
+                        <div
+                            key={opt.value}
+                            className="property-option"
+                            onClick={() => {
+                                onChange(opt.value);
+                                setIsOpen(false);
+                            }}
+                        >
+                            {renderPreview(opt.value)}
+                            <span>{opt.label}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// Helper Component for Visual Line Weight Selection
+const LineWeightSelector = ({ value, onChange }: { value: number, onChange: (val: string) => void }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const weights = [
+        0, 0.05, 0.09, 0.13, 0.15, 0.18, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50, 0.70, 1.00, 1.40, 2.00
+    ];
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    return (
+        <div className="property-selector" ref={dropdownRef}>
+            <div className="property-trigger" onClick={() => setIsOpen(!isOpen)}>
+                <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: '8px' }}>
+                    <div style={{
+                        height: Math.max(1, value * 5),
+                        width: '40px',
+                        backgroundColor: 'currentColor',
+                        maxHeight: '12px'
+                    }}></div>
+                    <span className="property-val-label">{value === 0 ? 'ByLayer' : `${value.toFixed(2)} mm`}</span>
+                </div>
+                <span className="material-icons" style={{ fontSize: '14px' }}>arrow_drop_down</span>
+            </div>
+
+            {isOpen && (
+                <div className="property-dropdown">
+                    {weights.map(w => (
+                        <div
+                            key={w}
+                            className="property-option"
+                            onClick={() => {
+                                onChange(w.toString());
+                                setIsOpen(false);
+                            }}
+                        >
+                            <div style={{
+                                height: Math.max(1, w * 5),
+                                width: '40px',
+                                backgroundColor: 'currentColor',
+                                marginRight: '10px',
+                                maxHeight: '12px'
+                            }}></div>
+                            <span>{w === 0 ? 'ByLayer' : `${w.toFixed(2)} mm`}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const Ribbon = () => {
     const [activeTab, setActiveTab] = useState<string>('Home');
@@ -20,7 +160,11 @@ const Ribbon = () => {
         startCommand, selectedIds, updateEntity, activeCommand, setCommandState, commandState, getEntity,
         entities, fileName, isModified, newFile, loadEntities, addSheet,
         baseUnit, setBaseUnit, drawingUnit, setDrawingUnit, drawingScale, setDrawingScale,
-        triggerZoomToFit, triggerZoomIn, triggerZoomOut, startZoomWindow, zoomWindowMode
+        triggerZoomToFit, triggerZoomIn, triggerZoomOut, startZoomWindow, zoomWindowMode,
+        // Layers
+        layers, activeLayerId, setActiveLayerId, setLayerDialogState,
+        // Global Properties
+        activeLineType, setActiveLineType, activeLineWeight, setActiveLineWeight
     } = useDrawing();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -31,11 +175,11 @@ const Ribbon = () => {
     const isHatchCommand = activeCommand === 'HATCH';
     const showHatchTab = isHatchSelected || isHatchCommand;
 
-    // Auto-switch to Hatch Editor tab when a hatch is selected
+    // Auto-switch to Hatch Editor tab when a hatch is selected OR hatch command is active
     useEffect(() => {
-        if (isHatchSelected) {
+        if (isHatchSelected || (isHatchCommand && !isHatchSelected)) {
             setActiveTab('Hatch Editor');
-        } else if (activeTab === 'Hatch Editor' && !isHatchCommand) {
+        } else if (activeTab === 'Hatch Editor' && !isHatchCommand && !isHatchSelected) {
             // If we deselected hatch and not in hatch command, go back to Home
             setActiveTab('Home');
         }
@@ -54,6 +198,13 @@ const Ribbon = () => {
     const changeProperty = (key: string, value: any) => {
         if (selectedIds.size > 0) {
             selectedIds.forEach(id => updateEntity(id, { [key]: value }));
+        } else {
+            // Update global active property
+            if (key === 'lineType') {
+                setActiveLineType(value);
+            } else if (key === 'lineWeight' || key === 'lineWidth') { // check naming
+                setActiveLineWeight(parseFloat(value));
+            }
         }
     };
 
@@ -103,6 +254,25 @@ const Ribbon = () => {
         }
         newFile();
     };
+
+    const handleLayerChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newLayerId = e.target.value;
+        if (selectedIds.size > 0) {
+            selectedIds.forEach(id => updateEntity(id, { layer: newLayerId }));
+        } else {
+            setActiveLayerId(newLayerId);
+        }
+    };
+
+    // Determine which layer ID to show in the dropdown
+    const currentLayerId = useMemo(() => {
+        if (selectedIds.size > 0) {
+            const firstId = Array.from(selectedIds)[0];
+            const ent = getEntity(firstId);
+            return ent ? ent.layer : activeLayerId;
+        }
+        return activeLayerId;
+    }, [selectedIds, activeLayerId, getEntity]);
 
     const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -163,42 +333,42 @@ const Ribbon = () => {
             return (
                 <div className="ribbon-group">
                     <div className="ribbon-panel">
-                        <div className="panel-label">Dosya İşlemleri</div>
-                        <div className="tool-row">
+                        <div className="tool-grid">
                             <button className="tool-btn" onClick={handleNewFile}><FaFile /> <span>Yeni</span></button>
                             <button className="tool-btn" onClick={() => fileInputRef.current?.click()}><FaFolderOpen /> <span>Aç</span></button>
                             <button className="tool-btn" onClick={handleCloseFile} title="Dosyayı kapat"><span className="material-icons" style={{ fontSize: '16px' }}>close</span> <span>Kapat</span></button>
                             <button className="tool-btn" onClick={handleSave}><FaSave /> <span>Kaydet</span></button>
-                            <button className="tool-btn" onClick={handleSaveAs}><FaFileExport /> <span>Farklı Kaydet</span></button>
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                style={{ display: 'none' }}
-                                accept=".dxf,.dwg"
-                                onChange={handleFileImport}
-                            />
+                            <button className="tool-btn" onClick={handleSaveAs}><FaFileExport /> <span>Farklı</span></button>
                         </div>
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            style={{ display: 'none' }}
+                            accept=".dxf,.dwg"
+                            onChange={handleFileImport}
+                        />
+                        <div className="panel-label">Dosya İşlemleri</div>
                     </div>
                     <div className="ribbon-panel">
-                        <div className="panel-label">Dosya Bilgisi</div>
                         <div className="tool-col" style={{ padding: '8px' }}>
-                            <div style={{ fontSize: '12px', color: '#ccc' }}>
+                            <div style={{ fontSize: '11px', color: '#ccc' }}>
                                 <strong>Dosya:</strong> {fileName}
                             </div>
-                            <div style={{ fontSize: '12px', color: isModified ? '#ffcc00' : '#4caf50' }}>
+                            <div style={{ fontSize: '11px', color: isModified ? '#ffcc00' : '#4caf50' }}>
                                 <strong>Durum:</strong> {isModified ? 'Değişiklik var' : 'Kaydedildi'}
                             </div>
-                            <div style={{ fontSize: '12px', color: '#ccc' }}>
-                                <strong>Nesne sayısı:</strong> {entities.length}
+                            <div style={{ fontSize: '11px', color: '#ccc' }}>
+                                <strong>Nesne:</strong> {entities.length}
                             </div>
                         </div>
+                        <div className="panel-label">Dosya Bilgisi</div>
                     </div>
                     <div className="ribbon-panel">
-                        <div className="panel-label">Desteklenen Formatlar</div>
-                        <div className="tool-col" style={{ padding: '8px', fontSize: '11px', color: '#aaa' }}>
-                            <div>✓ DXF (AutoCAD Drawing Exchange)</div>
-                            <div style={{ color: '#ff9800' }}>⚠ DWG (Sadece görüntüleme - DXF'e dönüştürün)</div>
+                        <div className="tool-col" style={{ padding: '8px', fontSize: '10px', color: '#aaa' }}>
+                            <div>✓ DXF (AutoCAD)</div>
+                            <div style={{ color: '#ff9800' }}>⚠ DWG (DXF'e dönüştür)</div>
                         </div>
+                        <div className="panel-label">Formatlar</div>
                     </div>
                 </div>
             );
@@ -376,130 +546,192 @@ const Ribbon = () => {
             case 'Home':
                 return (
                     <div className="ribbon-group">
-                        {/* Çizim Araçları */}
-                        <div className="ribbon-panel wide-panel">
-                            <div className="panel-label">Çizim</div>
+                        {/* Draw Panel */}
+                        <div className="ribbon-panel">
                             <div className="tool-grid">
-                                <button className={`tool-btn ${activeCommand === 'LINE' ? 'active' : ''}`} onClick={() => startCommand('LINE')} title="Çizgi">
+                                <button className={`tool-btn ${activeCommand === 'LINE' ? 'active' : ''}`} onClick={() => startCommand('LINE')}>
                                     <TbLine /> <span>Çizgi</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'POLYLINE' ? 'active' : ''}`} onClick={() => startCommand('POLYLINE')} title="Polyline">
-                                    <MdPolyline /> <span>PLine</span>
+                                <button className={`tool-btn ${activeCommand === 'POLYLINE' ? 'active' : ''}`} onClick={() => startCommand('POLYLINE')}>
+                                    <MdPolyline /> <span>PÇizgi</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'RECTANGLE' ? 'active' : ''}`} onClick={() => startCommand('RECTANGLE')} title="Dikdörtgen">
-                                    <FaRegSquare /> <span>Dikd.</span>
-                                </button>
-                                <button className={`tool-btn ${activeCommand === 'CIRCLE' ? 'active' : ''}`} onClick={() => startCommand('CIRCLE')} title="Daire">
+                                <button className={`tool-btn ${activeCommand === 'CIRCLE' ? 'active' : ''}`} onClick={() => startCommand('CIRCLE')}>
                                     <FaRegCircle /> <span>Daire</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'ARC' ? 'active' : ''}`} onClick={() => startCommand('ARC')} title="Yay">
+                                <button className={`tool-btn ${activeCommand === 'ARC' ? 'active' : ''}`} onClick={() => startCommand('ARC')}>
                                     <FaBezierCurve /> <span>Yay</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'POLYGON' ? 'active' : ''}`} onClick={() => startCommand('POLYGON')} title="Çokgen">
-                                    <FaDrawPolygon /> <span>Çokgen</span>
+                                <button className={`tool-btn ${activeCommand === 'RECTANGLE' ? 'active' : ''}`} onClick={() => startCommand('RECTANGLE')}>
+                                    <FaRegSquare /> <span>Dikd.</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'ELLIPSE' ? 'active' : ''}`} onClick={() => startCommand('ELLIPSE')} title="Elips">
-                                    <TbOvalVertical /> <span>Elips</span>
-                                </button>
-                                <button className={`tool-btn ${activeCommand === 'SPLINE' ? 'active' : ''}`} onClick={() => startCommand('SPLINE')} title="Spline">
-                                    <MdTimeline /> <span>Spline</span>
-                                </button>
-                                <button className={`tool-btn ${activeCommand === 'POINT' ? 'active' : ''}`} onClick={() => startCommand('POINT')} title="Nokta">
-                                    <FaCrosshairs /> <span>Nokta</span>
-                                </button>
-                                <button className={`tool-btn ${activeCommand === 'HATCH' ? 'active' : ''}`} onClick={() => startCommand('HATCH')} title="Tarama">
+                                <button className={`tool-btn ${activeCommand === 'HATCH' ? 'active' : ''}`} onClick={() => startCommand('HATCH')}>
                                     <FaFillDrip /> <span>Tarama</span>
                                 </button>
-                            </div>
-                        </div>
-
-                        {/* Text Tools (Moved to Home) */}
-                        <div className="ribbon-panel">
-                            <div className="panel-label">Metin</div>
-                            <div className="tool-grid">
-                                <button className={`tool-btn ${activeCommand === 'TEXT' ? 'active' : ''}`} onClick={() => startCommand('TEXT')} title="Tek Satır Metin">
-                                    <FaFont /> <span>Tek Satır</span>
+                                {/* New Draw Tools */}
+                                <button className={`tool-btn ${activeCommand === 'ELLIPSE' ? 'active' : ''}`} onClick={() => startCommand('ELLIPSE')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>hdr_weak</span> <span>Elips</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'MTEXT' ? 'active' : ''}`} onClick={() => startCommand('MTEXT')} title="Çok Satırlı Metin">
-                                    <FaFont /> <span>Çok Satır</span>
+                                <button className={`tool-btn ${activeCommand === 'POLYGON' ? 'active' : ''}`} onClick={() => startCommand('POLYGON')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>pentagon</span> <span>Çokgen</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'TABLE' ? 'active' : ''}`} onClick={() => startCommand('TABLE')} title="Tablo Oluştur">
-                                    <FaTable /> <span>Tablo</span>
+                                <button className={`tool-btn ${activeCommand === 'SPLINE' ? 'active' : ''}`} onClick={() => startCommand('SPLINE')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>gesture</span> <span>Spline</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'POINT' ? 'active' : ''}`} onClick={() => startCommand('POINT')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>gps_fixed</span> <span>Nokta</span>
                                 </button>
                             </div>
+                            <div className="panel-label">Çizim <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
                         </div>
 
-                        {/* Ölçülendirme */}
+                        {/* Modify Panel */}
                         <div className="ribbon-panel">
-                            <div className="panel-label">Ölçülendirme</div>
                             <div className="tool-grid">
-                                <button className={`tool-btn ${activeCommand === 'DIMLINEAR' ? 'active' : ''}`} onClick={() => startCommand('DIMLINEAR')} title="Doğrusal Ölçü">
-                                    <TbLine /> <span>Lineer</span>
-                                </button>
-                                <button className={`tool-btn ${activeCommand === 'DIMALIGNED' ? 'active' : ''}`} onClick={() => startCommand('DIMALIGNED')} title="Hizalı Ölçü">
-                                    <TbLine /> <span>Hizalı</span>
-                                </button>
-                                <button className={`tool-btn ${activeCommand === 'DIMRADIUS' ? 'active' : ''}`} onClick={() => startCommand('DIMRADIUS')} title="Yarıçap Ölçüsü">
-                                    <FaRegCircle /> <span>Yarıçap</span>
-                                </button>
-                                <button className={`tool-btn ${activeCommand === 'DIMDIAMETER' ? 'active' : ''}`} onClick={() => startCommand('DIMDIAMETER')} title="Çap Ölçüsü">
-                                    <FaRegCircle /> <span>Çap</span>
-                                </button>
-                                <button className={`tool-btn ${activeCommand === 'DIMANGULAR' ? 'active' : ''}`} onClick={() => startCommand('DIMANGULAR')} title="Açısal Ölçü">
-                                    <FaDrawPolygon /> <span>Açı</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Düzenleme */}
-                        <div className="ribbon-panel">
-                            <div className="panel-label">Düzenle</div>
-                            <div className="tool-grid">
-                                <button className={`tool-btn ${activeCommand === 'MOVE' ? 'active' : ''}`} onClick={() => startCommand('MOVE')} title="Taşı">
+                                <button className={`tool-btn ${activeCommand === 'MOVE' ? 'active' : ''}`} onClick={() => startCommand('MOVE')}>
                                     <FaArrowsAlt /> <span>Taşı</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'COPY' ? 'active' : ''}`} onClick={() => startCommand('COPY')} title="Kopyala">
-                                    <FaCopy /> <span>Kopya</span>
+                                <button className={`tool-btn ${activeCommand === 'COPY' ? 'active' : ''}`} onClick={() => startCommand('COPY')}>
+                                    <FaCopy /> <span>Kopyala</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'ROTATE' ? 'active' : ''}`} onClick={() => startCommand('ROTATE')} title="Döndür">
+                                <button className={`tool-btn ${activeCommand === 'ROTATE' ? 'active' : ''}`} onClick={() => startCommand('ROTATE')}>
                                     <FaRedo /> <span>Döndür</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'SCALE' ? 'active' : ''}`} onClick={() => startCommand('SCALE')} title="Ölçekle">
+                                <button className={`tool-btn ${activeCommand === 'MIRROR' ? 'active' : ''}`} onClick={() => startCommand('MIRROR')}>
+                                    <FaExchangeAlt /> <span>Aynala</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'SCALE' ? 'active' : ''}`} onClick={() => startCommand('SCALE')}>
                                     <FaExpand /> <span>Ölçek</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'MIRROR' ? 'active' : ''}`} onClick={() => startCommand('MIRROR')} title="Aynala">
-                                    <FaExchangeAlt /> <span>Ayna</span>
+                                <button className={`tool-btn ${activeCommand === 'TRIM' ? 'active' : ''}`} onClick={() => startCommand('TRIM')}>
+                                    <FaCut /> <span>Kırp</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'OFFSET' ? 'active' : ''}`} onClick={() => startCommand('OFFSET')} title="Öteleme">
-                                    <FaStream /> <span>Offset</span>
+                                {/* New Modify Tools */}
+                                <button className={`tool-btn ${activeCommand === 'OFFSET' ? 'active' : ''}`} onClick={() => startCommand('OFFSET')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>content_copy</span> <span>Ötele</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'ERASE' ? 'active' : ''}`} onClick={() => startCommand('ERASE')} title="Sil">
+                                <button className={`tool-btn ${activeCommand === 'FILLET' ? 'active' : ''}`} onClick={() => startCommand('FILLET')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>rounded_corner</span> <span>Pah</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'EXTEND' ? 'active' : ''}`} onClick={() => startCommand('EXTEND')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>last_page</span> <span>Uzat</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'ARRAY' ? 'active' : ''}`} onClick={() => startCommand('ARRAY')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>grid_view</span> <span>Dizi</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'ERASE' ? 'active' : ''}`} onClick={() => startCommand('ERASE')}>
                                     <FaEraser /> <span>Sil</span>
                                 </button>
+                                <button className={`tool-btn ${activeCommand === 'EXPLODE' ? 'active' : ''}`} onClick={() => startCommand('EXPLODE')}>
+                                    <FaObjectUngroup /> <span>Patlat</span>
+                                </button>
                             </div>
+                            <div className="panel-label">Düzenle <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
                         </div>
 
-                        {/* Özellikler */}
+                        {/* Annotation Panel */}
                         <div className="ribbon-panel">
-                            <div className="panel-label">Özellik</div>
-                            <div className="tool-col compact">
-                                <div className="prop-row">
-                                    <span>Renk</span>
-                                    <input
-                                        type="color"
-                                        onChange={(e) => changeProperty('color', e.target.value)}
-                                        defaultValue="#ffffff"
-                                        title="Renk"
-                                    />
-                                </div>
-                                <div className="prop-row">
-                                    <span>Çizgi</span>
-                                    <select onChange={(e) => changeProperty('lineType', e.target.value)} title="Çizgi Tipi">
-                                        <option value="continuous">Düz</option>
-                                        <option value="dashed">Kesik</option>
-                                    </select>
+                            <div className="tool-grid">
+                                <button className={`tool-btn ${activeCommand === 'TEXT' ? 'active' : ''}`} onClick={() => startCommand('TEXT')}>
+                                    <FaFont /> <span>Metin</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'MTEXT' ? 'active' : ''}`} onClick={() => startCommand('MTEXT')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>text_fields</span> <span>Çoklu</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DIMLINEAR' ? 'active' : ''}`} onClick={() => startCommand('DIMLINEAR')}>
+                                    <TbLine /> <span>Doğrus..</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DIMALIGNED' ? 'active' : ''}`} onClick={() => startCommand('DIMALIGNED')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>straighten</span> <span>Hizalı</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DIMANGULAR' ? 'active' : ''}`} onClick={() => startCommand('DIMANGULAR')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>architecture</span> <span>Açı</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DIMRADIUS' ? 'active' : ''}`} onClick={() => startCommand('DIMRADIUS')}>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>radio_button_checked</span> <span>Yarıçap</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'TABLE' ? 'active' : ''}`} onClick={() => startCommand('TABLE')}>
+                                    <FaTable /> <span>Tablo</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'LEADER' ? 'active' : ''}`} onClick={() => startCommand('LEADER')}>
+                                    <FaProjectDiagram /> <span>Ok</span>
+                                </button>
+                            </div>
+                            <div className="panel-label">Açıklama <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
+                        </div>
+
+                        {/* Layers Panel (AutoCAD Style) */}
+                        <div className="ribbon-panel layers-panel">
+                            <div style={{ display: 'flex', gap: '8px', padding: '2px' }}>
+                                <button
+                                    className="tool-btn large-btn"
+                                    onClick={() => setLayerDialogState({ isOpen: true })}
+                                    style={{ height: 'auto', minWidth: '60px' }}
+                                >
+                                    <span className="material-icons" style={{ fontSize: '32px' }}>layers</span>
+                                    <span>KATMANLAR</span>
+                                </button>
+                                <div className="tool-col" style={{ justifyContent: 'center', gap: '4px', minWidth: '160px' }}>
+                                    <div className="layer-selector-container">
+                                        <div className="layer-color-indicator" style={{ backgroundColor: layers.find(l => l.id === currentLayerId)?.color || '#fff' }}></div>
+                                        <select
+                                            value={currentLayerId}
+                                            onChange={handleLayerChange}
+                                            className="ribbon-select"
+                                        >
+                                            {layers.map(layer => (
+                                                <option key={layer.id} value={layer.id}>
+                                                    {layer.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px', paddingLeft: '4px' }}>
+                                        <button className="mini-icon-btn" title="Kapat/Aç"><span className="material-icons">lightbulb</span></button>
+                                        <button className="mini-icon-btn" title="Dondur"><span className="material-icons">ac_unit</span></button>
+                                        <button className="mini-icon-btn" title="Kilitle"><span className="material-icons">lock_open</span></button>
+                                    </div>
                                 </div>
                             </div>
+                            <div className="panel-label">KATMANLAR</div>
+                        </div>
+
+                        {/* Properties Panel (AutoCAD Style) */}
+                        <div className="ribbon-panel properties-panel">
+                            <div className="tool-col" style={{ gap: '3px', padding: '2px', minWidth: '180px' }}>
+                                {/* Color Property */}
+                                <div className="property-selector">
+                                    <div className="property-trigger">
+                                        <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: '8px' }}>
+                                            <div style={{
+                                                width: '16px',
+                                                height: '16px',
+                                                backgroundColor: selectedIds.size > 0 ? (getEntity(Array.from(selectedIds)[0])?.color || '#fff') : '#4cc2ff',
+                                                border: '1px solid rgba(255,255,255,0.2)'
+                                            }}></div>
+                                            <span className="property-val-label">RENK</span>
+                                        </div>
+                                        <input
+                                            type="color"
+                                            onChange={(e) => changeProperty('color', e.target.value)}
+                                            style={{ opacity: 0, position: 'absolute', inset: 0, cursor: 'pointer' }}
+                                        />
+                                        <span className="material-icons" style={{ fontSize: '14px' }}>arrow_drop_down</span>
+                                    </div>
+                                </div>
+
+                                {/* Line Type Property */}
+                                <LineTypeSelector
+                                    value={selectedIds.size > 0 ? (getEntity(Array.from(selectedIds)[0])?.lineType || 'continuous') : activeLineType}
+                                    onChange={(val) => changeProperty('lineType', val)}
+                                />
+
+                                {/* Line Weight Property */}
+                                <LineWeightSelector
+                                    value={selectedIds.size > 0 ? (getEntity(Array.from(selectedIds)[0])?.lineWeight ?? 0) : activeLineWeight}
+                                    onChange={(val) => changeProperty('lineWeight', val)}
+                                />
+                            </div>
+                            <div className="panel-label">ÖZELLİKLER</div>
                         </div>
                     </div>
                 );
@@ -507,17 +739,17 @@ const Ribbon = () => {
                 return (
                     <div className="ribbon-group">
                         <div className="ribbon-panel">
-                            <div className="panel-label">Import</div>
-                            <div className="tool-row">
-                                <button className="tool-btn" onClick={() => fileInputRef.current?.click()}><FaFolderOpen /> <span>Import DXF</span></button>
-                                <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    style={{ display: 'none' }}
-                                    accept=".dxf"
-                                    onChange={handleFileImport}
-                                />
+                            <div className="tool-grid">
+                                <button className="tool-btn" onClick={() => fileInputRef.current?.click()}><FaFolderOpen /> <span>DXF</span></button>
                             </div>
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                style={{ display: 'none' }}
+                                accept=".dxf"
+                                onChange={handleFileImport}
+                            />
+                            <div className="panel-label">Import</div>
                         </div>
                     </div>
                 );
@@ -525,15 +757,14 @@ const Ribbon = () => {
                 return (
                     <div className="ribbon-group">
                         <div className="ribbon-panel">
-                            <div className="panel-label">Yakınlaştır</div>
-                            <div className="tool-row">
+                            <div className="tool-grid">
                                 <button
                                     className="tool-btn"
                                     onClick={() => triggerZoomIn()}
                                     title="Yakınlaştır (+)"
                                 >
                                     <span className="material-icons">zoom_in</span>
-                                    <span>Yakınlaştır</span>
+                                    <span>Yakın</span>
                                 </button>
                                 <button
                                     className="tool-btn"
@@ -541,7 +772,7 @@ const Ribbon = () => {
                                     title="Uzaklaştır (-)"
                                 >
                                     <span className="material-icons">zoom_out</span>
-                                    <span>Uzaklaştır</span>
+                                    <span>Uzak</span>
                                 </button>
                                 <button
                                     className="tool-btn"
@@ -561,9 +792,9 @@ const Ribbon = () => {
                                     <span>Window</span>
                                 </button>
                             </div>
+                            <div className="panel-label">Yakınlaştır</div>
                         </div>
                         <div className="ribbon-panel">
-                            <div className="panel-label">Ölçek</div>
                             <div className="tool-col compact">
                                 <div className="prop-row">
                                     <span>Ölçek</span>
@@ -587,9 +818,9 @@ const Ribbon = () => {
                                     </select>
                                 </div>
                             </div>
+                            <div className="panel-label">Ölçek</div>
                         </div>
                         <div className="ribbon-panel">
-                            <div className="panel-label">Birimler</div>
                             <div className="tool-col compact">
                                 <div className="prop-row">
                                     <span>Proje</span>
@@ -622,24 +853,123 @@ const Ribbon = () => {
                                     </select>
                                 </div>
                             </div>
+                            <div className="panel-label">Birimler</div>
                         </div>
                         <div className="ribbon-panel">
-                            <div className="panel-label">Bilgi</div>
                             <div className="tool-col compact" style={{ fontSize: '11px', color: '#aaa', padding: '8px' }}>
                                 <div>Ölçek: <strong style={{ color: '#4cc2ff' }}>{drawingScale}</strong></div>
                                 <div>Proje: <strong style={{ color: '#ffcc00' }}>{baseUnit}</strong></div>
                                 <div>Göster: <strong style={{ color: '#4cc2ff' }}>{drawingUnit}</strong></div>
                             </div>
+                            <div className="panel-label">Bilgi</div>
+                        </div>
+                    </div>
+                );
+
+            case 'Annotate':
+                return (
+                    <div className="ribbon-group">
+                        <div className="ribbon-panel">
+                            <div className="tool-grid">
+                                <button className={`tool-btn ${activeCommand === 'MTEXT' ? 'active' : ''}`} onClick={() => startCommand('MTEXT')}>
+                                    <span className="material-icons">text_fields</span> <span>Çoklu Metin</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'TEXT' ? 'active' : ''}`} onClick={() => startCommand('TEXT')}>
+                                    <FaFont /> <span>Tek Metin</span>
+                                </button>
+                            </div>
+                            <div className="panel-label">Metin</div>
+                        </div>
+                        <div className="ribbon-panel">
+                            <div className="tool-grid">
+                                <button className={`tool-btn ${activeCommand === 'DIMLINEAR' ? 'active' : ''}`} onClick={() => startCommand('DIMLINEAR')}>
+                                    <TbLine /> <span>Doğrusal</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DIMALIGNED' ? 'active' : ''}`} onClick={() => startCommand('DIMALIGNED')}>
+                                    <span className="material-icons">straighten</span> <span>Hizalı</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DIMANGULAR' ? 'active' : ''}`} onClick={() => startCommand('DIMANGULAR')}>
+                                    <span className="material-icons">architecture</span> <span>Açısal</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DIMRADIUS' ? 'active' : ''}`} onClick={() => startCommand('DIMRADIUS')}>
+                                    <span className="material-icons">radio_button_checked</span> <span>Yarıçap</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DIMDIAMETER' ? 'active' : ''}`} onClick={() => startCommand('DIMDIAMETER')}>
+                                    <span className="material-icons">data_usage</span> <span>Çap</span>
+                                </button>
+                            </div>
+                            <div className="panel-label">Ölçülendirme</div>
+                        </div>
+                        <div className="ribbon-panel">
+                            <div className="tool-grid">
+                                <button className={`tool-btn ${activeCommand === 'LEADER' ? 'active' : ''}`} onClick={() => startCommand('LEADER')}>
+                                    <FaProjectDiagram /> <span>Lider</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'TABLE' ? 'active' : ''}`} onClick={() => startCommand('TABLE')}>
+                                    <FaTable /> <span>Tablo</span>
+                                </button>
+                            </div>
+                            <div className="panel-label">Liderler ve Tablolar</div>
+                        </div>
+                    </div>
+                );
+
+            case 'Parametric':
+                return (
+                    <div className="ribbon-group">
+                        <div className="ribbon-panel">
+                            <div className="tool-grid">
+                                <button className="tool-btn" onClick={() => startCommand('GEOMCONSTRAINT_COINCIDENT')}>
+                                    <span className="material-icons">all_out</span> <span>Çakışık</span>
+                                </button>
+                                <button className="tool-btn" onClick={() => startCommand('GEOMCONSTRAINT_PARALLEL')}>
+                                    <span className="material-icons">view_stream</span> <span>Paralel</span>
+                                </button>
+                                <button className="tool-btn" onClick={() => startCommand('GEOMCONSTRAINT_TANGENT')}>
+                                    <span className="material-icons">radio_button_unchecked</span> <span>Teğet</span>
+                                </button>
+                            </div>
+                            <div className="panel-label">Geometrik</div>
+                        </div>
+                    </div>
+                );
+
+            case 'Manage':
+                return (
+                    <div className="ribbon-group">
+                        <div className="ribbon-panel">
+                            <div className="tool-grid">
+                                <button className="tool-btn" onClick={() => startCommand('PURGE')}>
+                                    <span className="material-icons">delete_sweep</span> <span>Temizle</span>
+                                </button>
+                                <button className="tool-btn" onClick={() => startCommand('AUDIT')}>
+                                    <span className="material-icons">verified_user</span> <span>Denetle</span>
+                                </button>
+                            </div>
+                            <div className="panel-label">Bakım</div>
+                        </div>
+                    </div>
+                );
+
+            case 'Export':
+                return (
+                    <div className="ribbon-group">
+                        <div className="ribbon-panel">
+                            <div className="tool-grid">
+                                <button className="tool-btn" onClick={handleSave}><FaSave /> <span>DXF Kaydet</span></button>
+                                <button className="tool-btn" onClick={handleSaveAs}><FaFileExport /> <span>Farklı Kaydet</span></button>
+                            </div>
+                            <div className="panel-label">Dışa Aktar</div>
                         </div>
                     </div>
                 );
 
             default:
-                return <div>Work in progress</div>;
+                return <div style={{ padding: '20px', color: '#888' }}>Bu sekme yapım aşamasındadır.</div>;
         }
     };
 
-    const tabs = ['File', 'Home', 'Insert', 'View', 'Manage'];
+    const tabs = ['Home', 'Annotate', 'Insert', 'Parametric', 'View', 'Manage', 'Export'];
     if (showHatchTab) tabs.push('Hatch Editor');
 
     return (
@@ -702,8 +1032,6 @@ const Ribbon = () => {
                         key={tab}
                         className={`ribbon-tab ${activeTab === tab ? 'active' : ''}`}
                         onClick={() => setActiveTab(tab)}
-                        style={tab === 'File' ? { backgroundColor: '#107c10', color: 'white' } :
-                            tab === 'Hatch Editor' ? { backgroundColor: '#2b579a', color: 'white' } : {}}
                     >
                         {tab}
                     </div>
@@ -715,5 +1043,7 @@ const Ribbon = () => {
         </div>
     );
 };
+
+
 
 export default Ribbon;

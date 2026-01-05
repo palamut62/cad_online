@@ -1,5 +1,195 @@
-import { Point } from '../types/entities';
+import { Point, Entity } from '../types/entities';
 import * as THREE from 'three';
+
+/**
+ * Otomatik köşe noktası tespiti ve seçimi
+ * Belli bir mesafe içindeki ölçülebilir noktaları bulur
+ */
+export interface AutoDetectedPoint {
+    point: Point;
+    type: 'ENDPOINT' | 'MIDPOINT' | 'CENTER' | 'INTERSECTION' | 'QUADRANT';
+    entityId?: number;
+    priority: number; // 0 = en yüksek öncelik
+}
+
+export const autoDetectPoints = (
+    cursorPos: Point,
+    entities: Entity[],
+    detectionRadius: number = 10
+): AutoDetectedPoint[] => {
+    const detectedPoints: AutoDetectedPoint[] = [];
+
+    entities.forEach(entity => {
+        if (!entity.visible) return;
+
+        switch (entity.type) {
+            case 'LINE':
+                const line = entity as any;
+                // Endpoints
+                detectedPoints.push({
+                    point: line.start,
+                    type: 'ENDPOINT',
+                    entityId: entity.id,
+                    priority: 0
+                });
+                detectedPoints.push({
+                    point: line.end,
+                    type: 'ENDPOINT',
+                    entityId: entity.id,
+                    priority: 0
+                });
+                // Midpoint
+                const midpoint: Point = [
+                    (line.start[0] + line.end[0]) / 2,
+                    (line.start[1] + line.end[1]) / 2,
+                    0
+                ];
+                detectedPoints.push({
+                    point: midpoint,
+                    type: 'MIDPOINT',
+                    entityId: entity.id,
+                    priority: 1
+                });
+                break;
+
+            case 'LWPOLYLINE':
+                const polyline = entity as any;
+                polyline.vertices.forEach((v: Point, idx: number) => {
+                    // Vertices (endpoints)
+                    detectedPoints.push({
+                        point: v,
+                        type: 'ENDPOINT',
+                        entityId: entity.id,
+                        priority: 0
+                    });
+                    // Segment midpoints
+                    if (idx < polyline.vertices.length - 1) {
+                        const nextV = polyline.vertices[idx + 1];
+                        const segMid: Point = [
+                            (v[0] + nextV[0]) / 2,
+                            (v[1] + nextV[1]) / 2,
+                            0
+                        ];
+                        detectedPoints.push({
+                            point: segMid,
+                            type: 'MIDPOINT',
+                            entityId: entity.id,
+                            priority: 1
+                        });
+                    }
+                });
+                // Closed polyline: last segment
+                if (polyline.closed && polyline.vertices.length > 2) {
+                    const lastV = polyline.vertices[polyline.vertices.length - 1];
+                    const firstV = polyline.vertices[0];
+                    const segMid: Point = [
+                        (lastV[0] + firstV[0]) / 2,
+                        (lastV[1] + firstV[1]) / 2,
+                        0
+                    ];
+                    detectedPoints.push({
+                        point: segMid,
+                        type: 'MIDPOINT',
+                        entityId: entity.id,
+                        priority: 1
+                    });
+                }
+                break;
+
+            case 'CIRCLE':
+            case 'ARC':
+                const circleArc = entity as any;
+                // Center
+                detectedPoints.push({
+                    point: circleArc.center,
+                    type: 'CENTER',
+                    entityId: entity.id,
+                    priority: 0
+                });
+                // Quadrants (4 points at 0, 90, 180, 270 degrees)
+                for (let i = 0; i < 4; i++) {
+                    const angle = (i * Math.PI) / 2;
+                    const quadrant: Point = [
+                        circleArc.center[0] + Math.cos(angle) * circleArc.radius,
+                        circleArc.center[1] + Math.sin(angle) * circleArc.radius,
+                        0
+                    ];
+                    detectedPoints.push({
+                        point: quadrant,
+                        type: 'QUADRANT',
+                        entityId: entity.id,
+                        priority: 2
+                    });
+                }
+                break;
+
+            case 'ELLIPSE':
+                const ellipse = entity as any;
+                detectedPoints.push({
+                    point: ellipse.center,
+                    type: 'CENTER',
+                    entityId: entity.id,
+                    priority: 0
+                });
+                break;
+
+            case 'POINT':
+                const pointEnt = entity as any;
+                detectedPoints.push({
+                    point: pointEnt.position,
+                    type: 'ENDPOINT',
+                    entityId: entity.id,
+                    priority: 0
+                });
+                break;
+        }
+    });
+
+    // Mesafe filtrelemesi ve sıralama
+    const cursor = new THREE.Vector3(...cursorPos);
+    const filtered = detectedPoints
+        .filter(dp => {
+            const dpVec = new THREE.Vector3(...dp.point);
+            return dpVec.distanceTo(cursor) <= detectionRadius;
+        })
+        .sort((a, b) => {
+            const distA = cursor.distanceTo(new THREE.Vector3(...a.point));
+            const distB = cursor.distanceTo(new THREE.Vector3(...b.point));
+            if (Math.abs(distA - distB) < 0.1) {
+                // Aynı mesafede ise öncelik kullan
+                return a.priority - b.priority;
+            }
+            return distA - distB;
+        });
+
+    return filtered;
+};
+
+/**
+ * İki nokta arasındaki ölçü için otomatik olarak en iyi köşe noktalarını seçer
+ */
+export const autoSelectDimensionPoints = (
+    cursorPos: Point,
+    entities: Entity[],
+    detectionRadius: number = 10
+): { startPoint: Point | null; endPoint: Point | null } => {
+    const detected = autoDetectPoints(cursorPos, entities, detectionRadius);
+
+    if (detected.length >= 2) {
+        // En yakın iki noktayı seç
+        return {
+            startPoint: detected[0].point,
+            endPoint: detected[1].point
+        };
+    } else if (detected.length === 1) {
+        return {
+            startPoint: detected[0].point,
+            endPoint: null
+        };
+    }
+
+    return { startPoint: null, endPoint: null };
+};
 
 export const calculateDimensionGeometry = (
     start: Point,

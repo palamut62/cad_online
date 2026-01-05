@@ -1,13 +1,62 @@
 .command-line-container {
-    background-color: var(--cmd-line-bg);
+    position: absolute;
+    bottom: 40px;
+    /* Above status bar */
+    left: 40px;
+    /* Away from side toolbar */
+    right: 40px;
+    background-color: rgba(30, 30, 31, 0.9);
+    /* Slightly darker for better contrast */
     color: var(--cmd-line-text);
-    border-top: 1px solid var(--border-color);
-    padding: 5px;
-    height: 80px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 8px 12px;
+    height: auto;
+    min-height: 48px;
+    max-height: 140px;
+    display: flex;
+    flex-direction: row;
+    /* Horizontal layout for handle + content */
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 11px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    /* Deeper shadow */
+    z-index: 100;
+    border-radius: 6px;
+    backdrop-filter: blur(8px);
+    /* Stronger blur */
+}
+
+.command-line-handle {
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    margin-right: 12px;
+    cursor: grab;
+}
+
+.command-line-handle:active {
+    cursor: grabbing;
+}
+
+.command-line-container.dragging {
+    cursor: grabbing;
+    user-select: none;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.8);
+    transition: none;
+    /* Disable transitions during drag for smooth movement */
+}
+
+.command-line-handle .material-icons {
+    font-size: 16px;
+}
+
+.command-line-content {
+    flex: 1;
     display: flex;
     flex-direction: column;
-    font-family: monospace;
-    font-size: 13px;
 }
 
 .command-history {

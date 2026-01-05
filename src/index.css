@@ -1,14 +1,28 @@
 :root {
-  --bg-color: #2b2b2b;
-  --header-bg: #1c1c1c;
-  --viewport-bg: #212223;
-  --text-main: #f0f0f0;
-  --text-dim: #a0a0a0;
-  --accent-blue: #0078d4;
+  /* ZWCAD 2026 Precision Colors */
+  --bg-color: #1a1a1b;
+  /* Darkest Workspace Arka Plan */
+  --header-bg: #252526;
+  /* Title Bar / Quick Access */
+  --ribbon-bg: #2d2d2d;
+  /* Ribbon Body & Active Tab */
+  --viewport-bg: #1a1a1b;
+
+  --text-main: #f1f1f1;
+  --text-dim: #999999;
+
+  --accent-blue: #4cc2ff;
+  /* Vibrant cyan-blue for active states */
+  --accent-hover: rgba(76, 194, 255, 0.15);
+  --active-tab-highlight: #4cc2ff;
+
   --border-color: #3f3f3f;
-  --ribbon-bg: #2b2b2b;
-  --panel-bg: #333333;
-  --footer-bg: #0078d4; 
+
+  --panel-bg: #2d2d2d;
+  --footer-bg: #252526;
+  /* Dark footer strip */
+  --status-bar-bg: #252526;
+
   --cmd-line-bg: #1e1e1e;
   --cmd-line-text: #cccccc;
 }
@@ -20,7 +34,8 @@ body {
   color: var(--text-main);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   overflow: hidden;
-  user-select: none; /* Prevent selection while drawing */
+  user-select: none;
+  /* Prevent selection while drawing */
 }
 
 #root {
@@ -30,23 +45,54 @@ body {
   flex-direction: column;
 }
 
+/* Menu Portal - must be above everything including Canvas */
+#menu-portal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 999999;
+  pointer-events: none;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: var(--bg-color);
 }
+
 ::-webkit-scrollbar-thumb {
   background: #555;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #777;
 }
 
 /* Utility classes */
-.flex-row { display: flex; flex-direction: row; }
-.flex-col { display: flex; flex-direction: column; }
-.flex-1 { flex: 1; }
-.absolute-fill { position: absolute; top:0; left:0; right:0; bottom:0; }
+.flex-row {
+  display: flex;
+  flex-direction: row;
+}
+
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.absolute-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}

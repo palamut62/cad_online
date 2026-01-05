@@ -95,25 +95,45 @@ export const closestPointOnEntity = (px: number, py: number, ent: Entity): numbe
     return Math.sqrt(dx * dx + dy * dy);
   } else if (ent.type === 'HATCH') {
     // Hatch için boundary polyline'ını kullan
-    if (!ent.boundary || !ent.boundary.vertices || ent.boundary.vertices.length < 3) {
+    // Debug: Check if boundary exists
+    if (!ent.boundary) {
+      console.log('HATCH selection: No boundary found', ent);
       return Infinity;
     }
-    const verts = ent.boundary.vertices;
+
+    // Get vertices - handle both direct vertices and LWPolyline boundary
+    const verts = ent.boundary.vertices || (ent.boundary as any);
+
+    if (!verts || !Array.isArray(verts) || verts.length < 3) {
+      console.log('HATCH selection: Invalid vertices', ent.boundary);
+      return Infinity;
+    }
+
     let minDist = Infinity;
 
     // Boundary kenarlarına olan mesafe
     for (let i = 0; i < verts.length; i++) {
-      const next = (i + 1) % verts.length;
-      const d = distancePointToLineSegment(
-        px, py,
-        verts[i][0], verts[i][1],
-        verts[next][0], verts[next][1]
-      );
+      const curr = verts[i];
+      const next = verts[(i + 1) % verts.length];
+
+      // Handle both Point tuple and object formats
+      const x1 = Array.isArray(curr) ? curr[0] : (curr as any).x || 0;
+      const y1 = Array.isArray(curr) ? curr[1] : (curr as any).y || 0;
+      const x2 = Array.isArray(next) ? next[0] : (next as any).x || 0;
+      const y2 = Array.isArray(next) ? next[1] : (next as any).y || 0;
+
+      const d = distancePointToLineSegment(px, py, x1, y1, x2, y2);
       if (d < minDist) minDist = d;
     }
 
     // Ayrıca noktanın hatch içinde olup olmadığını kontrol et (point-in-polygon)
-    if (isPointInsidePolygon(px, py, verts)) {
+    // Convert vertices to Point format for isPointInsidePolygon
+    const pointVerts: Point[] = verts.map((v: any) => {
+      if (Array.isArray(v) && v.length >= 2) return [v[0], v[1], v[2] || 0] as Point;
+      return [v.x || 0, v.y || 0, v.z || 0] as Point;
+    });
+
+    if (isPointInsidePolygon(px, py, pointVerts)) {
       return 0; // İçerideyse mesafe 0
     }
 
@@ -738,6 +758,12 @@ export const isEntityInBox = (ent: Entity, min: Point, max: Point): boolean => {
     const pos = ent.position;
     return pos[0] >= min[0] && pos[0] + tableWidth <= max[0] &&
       pos[1] - tableHeight >= min[1] && pos[1] <= max[1];
+  } else if (ent.type === 'DIMENSION') {
+    // DIMENSION için tüm noktaların kutu içinde olup olmadığını kontrol et
+    const { start, end, dimLinePosition } = ent;
+    return isPointInBox(start, min, max) &&
+      isPointInBox(end, min, max) &&
+      (!dimLinePosition || isPointInBox(dimLinePosition, min, max));
   }
   return false;
 };
@@ -811,6 +837,33 @@ export const doesEntityIntersectBox = (ent: Entity, min: Point, max: Point): boo
     const eMinY = ent.center[1] - ent.ry;
     const eMaxY = ent.center[1] + ent.ry;
     return !(eMaxX < min[0] || eMinX > max[0] || eMaxY < min[1] || eMinY > max[1]);
+  } else if (ent.type === 'DIMENSION') {
+    // DIMENSION için herhangi bir noktası kutu ile kesişiyorsa seç
+    const { start, end, dimLinePosition } = ent;
+
+    // Start ve end noktaları arasındaki çizgi
+    const lineMinX = Math.min(start[0], end[0]);
+    const lineMaxX = Math.max(start[0], end[0]);
+    const lineMinY = Math.min(start[1], end[1]);
+    const lineMaxY = Math.max(start[1], end[1]);
+
+    if (!(lineMaxX < min[0] || lineMinX > max[0] || lineMaxY < min[1] || lineMinY > max[1])) {
+      return true;
+    }
+
+    // Dimension line position da kontrol et
+    if (dimLinePosition) {
+      const dimMinX = Math.min(start[0], end[0], dimLinePosition[0]);
+      const dimMaxX = Math.max(start[0], end[0], dimLinePosition[0]);
+      const dimMinY = Math.min(start[1], end[1], dimLinePosition[1]);
+      const dimMaxY = Math.max(start[1], end[1], dimLinePosition[1]);
+
+      if (!(dimMaxX < min[0] || dimMinX > max[0] || dimMaxY < min[1] || dimMinY > max[1])) {
+        return true;
+      }
+    }
+
+    return false;
   }
   return false;
 };

@@ -1,8 +1,18 @@
 .viewport-full {
     width: 100%;
     height: 100%;
-    /* Custom square cursor - 16x16 with center at 8,8 */
-    cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect x="1" y="1" width="14" height="14" fill="none" stroke="white" stroke-width="1"/><rect x="2" y="2" width="12" height="12" fill="none" stroke="black" stroke-width="1"/></svg>') 8 8, crosshair;
+    /* Default: Pickbox + Crosshair */
+    cursor: url('data:image/svg+xml;utf8,<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 0 V32 M0 16 H32" stroke="white" stroke-width="1.5" style="filter: drop-shadow(0px 0px 1px black);"/><rect x="12" y="12" width="8" height="8" stroke="white" stroke-width="1.5" fill="none" style="filter: drop-shadow(0px 0px 1px black);"/></svg>') 16 16, crosshair;
+}
+
+.viewport-full canvas {
+    background-color: #212223;
+}
+
+@media print {
+    .viewport-full canvas {
+        background-color: white !important;
+    }
 }
 
 .viewport-full.panning {
@@ -13,39 +23,33 @@
     cursor: grabbing !important;
 }
 
-/* Düzenleme komutları için cursor stilleri */
-.viewport-full.command-move {
-    cursor: move;
-}
-
-.viewport-full.command-copy {
-    cursor: copy;
-}
-
-.viewport-full.command-rotate {
-    cursor: grab;
-}
-
-.viewport-full.command-scale {
-    cursor: nwse-resize;
-}
-
-.viewport-full.command-mirror {
-    cursor: ew-resize;
-}
-
-.viewport-full.command-erase {
-    cursor: not-allowed;
-}
-
-.viewport-full.command-offset {
-    cursor: col-resize;
-}
-
-.viewport-full.command-hatch {
-    cursor: cell;
-}
-
+/* Drawing commands - Crosshair only */
 .viewport-full.command-draw {
+    cursor: crosshair;
+}
+
+/* Edit/Select commands - Pickbox only initially */
+.viewport-full.command-select {
+    cursor: url('data:image/svg+xml;utf8,<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="12" width="8" height="8" stroke="white" stroke-width="2" fill="none" style="filter: drop-shadow(0px 0px 1px black);"/></svg>') 16 16, pointer;
+}
+
+.viewport-full.command-move,
+.viewport-full.command-copy,
+.viewport-full.command-rotate,
+.viewport-full.command-scale,
+.viewport-full.command-mirror,
+.viewport-full.command-erase,
+.viewport-full.command-offset,
+.viewport-full.command-trim,
+.viewport-full.command-extend,
+.viewport-full.command-explode,
+.viewport-full.command-fillet,
+.viewport-full.command-chamfer {
+    /* Fallback to select cursor usually */
+    cursor: url('data:image/svg+xml;utf8,<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="12" width="8" height="8" stroke="white" stroke-width="2" fill="none" style="filter: drop-shadow(0px 0px 1px black);"/></svg>') 16 16, pointer;
+}
+
+/* If picking point during edit command, we might switch to crosshair via JS logic and custom class */
+.viewport-full.command-crosshair {
     cursor: crosshair;
 }

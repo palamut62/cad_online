@@ -59,7 +59,14 @@ export type CommandType =
   | 'ZOOM'
   | 'PAN'
   // Annotate commands
-  | 'TABLE';
+  | 'TABLE'
+  // Parametric commands
+  | 'GEOMCONSTRAINT_COINCIDENT'
+  | 'GEOMCONSTRAINT_PARALLEL'
+  | 'GEOMCONSTRAINT_TANGENT'
+  // Management commands
+  | 'PURGE'
+  | 'AUDIT';
 
 export interface CommandState {
   step: number;

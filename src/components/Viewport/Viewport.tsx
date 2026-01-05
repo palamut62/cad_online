@@ -6,7 +6,7 @@ import './Viewport.css';
 import TextInputDialog from '../Dialogs/TextInputDialog';
 
 const Viewport = () => {
-    const { activeCommand } = useDrawing();
+    const { activeCommand, selectedIds, getEntity, updateEntity, step } = useDrawing();
     const [isPanning, setIsPanning] = useState(false);
 
     const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -31,7 +31,6 @@ const Viewport = () => {
     const [editDimText, setEditDimText] = useState<string>('');
     const [editDimHeight, setEditDimHeight] = useState<number>(5);
     const [showEditDialog, setShowEditDialog] = useState(false);
-    const { selectedIds, getEntity, updateEntity } = useDrawing();
 
     const handleDoubleClick = useCallback(() => {
         if (selectedIds.size === 1) {
@@ -62,18 +61,28 @@ const Viewport = () => {
         if (!activeCommand) return '';
         const cmd = activeCommand.toLowerCase();
 
-        // Edit commands
-        if (['move', 'copy', 'rotate', 'scale', 'mirror', 'erase', 'offset', 'hatch'].includes(cmd)) {
-            return `command-${cmd}`;
+        // Düzenleme komutları (Selection vs Point Picking)
+        if (['move', 'copy', 'rotate', 'scale', 'mirror', 'erase', 'offset', 'explode', 'trim', 'extend', 'join', 'fillet', 'chamfer'].includes(cmd)) {
+            // Çoğu düzenleme komutunda 1. adım (step 0) seçim aşamasıdır -> Pickbox
+            // Sonraki adımlar (step > 0) genelde nokta seçimidir -> Crosshair
+            // Ancak ERASE ve EXPLODE gibi komutlar sadece seçimden oluşabilir veya seçim bitince biter.
+            // OFFSET komutunda step 0: mesafe girme (metin) veya nokta seçme (crosshair?). AutoCAD offset: Pickbox? No.
+
+            // Genel kural: Seçim yapılıyorsa Pickbox, nokta seçiliyorsa Crosshair.
+            // step 0 varsayılan olarak seçimi temsil eder.
+            if (step === 0 || cmd === 'erase' || cmd === 'explode') {
+                return 'command-select';
+            }
+            return 'command-draw'; // Crosshair
         }
 
         // Drawing commands
-        if (['line', 'circle', 'polyline', 'rectangle', 'polygon', 'arc', 'spline', 'ellipse', 'point', 'ray', 'xline', 'donut', 'text', 'mtext', 'dimlinear', 'dimaligned', 'dimangular', 'dimradius', 'dimdiameter'].includes(cmd)) {
+        if (['line', 'circle', 'polyline', 'rectangle', 'polygon', 'arc', 'spline', 'ellipse', 'point', 'ray', 'xline', 'donut', 'text', 'mtext', 'dimlinear', 'dimaligned', 'dimangular', 'dimradius', 'dimdiameter', 'leader', 'hatch'].includes(cmd)) {
             return 'command-draw';
         }
 
         return '';
-    }, [activeCommand]);
+    }, [activeCommand, step]);
 
     return (
         <div
@@ -87,8 +96,8 @@ const Viewport = () => {
                 orthographic
                 camera={{ zoom: 20, position: [0, 0, 100], up: [0, 1, 0] }}
                 onContextMenu={(e) => e.preventDefault()}
+                gl={{ preserveDrawingBuffer: true, alpha: true }}
             >
-                <color attach="background" args={['#212223']} />
                 <Scene />
             </Canvas>
 

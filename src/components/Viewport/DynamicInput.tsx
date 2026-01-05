@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Html, Line } from '@react-three/drei';
 import { useDrawing } from '../../context/DrawingContext';
 import { distance2D, radToDeg } from '../../utils/geometryUtils';
 import { formatWithUnit, formatDimension, formatSize, convertToUnit } from '../../utils/unitConversion';
+import type { Point } from '../../types/entities';
 
 // Inline styles
 const styles = {
@@ -75,10 +76,209 @@ const styles = {
         whiteSpace: 'nowrap' as const,
         border: '1px solid rgba(255, 255, 255, 0.1)',
     },
+    inputContainer: {
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: '4px',
+        background: 'rgba(0, 0, 0, 0.85)',
+        padding: '6px 8px',
+        borderRadius: '4px',
+        border: '1px solid rgba(0, 255, 0, 0.4)',
+    },
+    inputRow: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+    },
+    inputLabel: {
+        color: '#888',
+        fontSize: '10px',
+        fontFamily: "'Consolas', 'Monaco', monospace",
+        minWidth: '12px',
+    },
+    inputField: {
+        background: 'rgba(0, 0, 0, 0.6)',
+        border: '1px solid rgba(0, 255, 0, 0.5)',
+        borderRadius: '2px',
+        color: '#00ff00',
+        fontSize: '11px',
+        fontFamily: "'Consolas', 'Monaco', monospace",
+        padding: '2px 4px',
+        width: '60px',
+        outline: 'none',
+    },
+    inputFieldFocused: {
+        background: 'rgba(0, 50, 0, 0.8)',
+        border: '1px solid rgba(0, 255, 0, 0.8)',
+        boxShadow: '0 0 5px rgba(0, 255, 0, 0.3)',
+    },
+    inputUnit: {
+        color: '#666',
+        fontSize: '10px',
+        fontFamily: "'Consolas', 'Monaco', monospace",
+    },
+    inputHint: {
+        color: '#555',
+        fontSize: '9px',
+        fontFamily: "'Consolas', 'Monaco', monospace",
+        marginTop: '2px',
+    },
+};
+
+// Editable Input Component for precise dimension entry
+interface DimensionInputProps {
+    position: [number, number, number];
+    length: number;
+    angle: number;
+    unit: string;
+    onSubmit: (length: number, angle: number) => void;
+}
+
+const DimensionInputPanel: React.FC<DimensionInputProps> = ({ position, length, angle, unit, onSubmit }) => {
+    // Initial value should only be set once or when re-mounting
+    const [lengthValue, setLengthValue] = useState('');
+    const [angleValue, setAngleValue] = useState('');
+    const [focusedField, setFocusedField] = useState<'length' | 'angle' | null>(null);
+    const lengthInputRef = useRef<HTMLInputElement>(null);
+    const angleInputRef = useRef<HTMLInputElement>(null);
+
+    // Update display values when props change, ONLY if not focused and not typing
+    useEffect(() => {
+        if (focusedField !== 'length') {
+            setLengthValue(length.toFixed(2));
+        }
+    }, [length, focusedField]);
+
+    useEffect(() => {
+        if (focusedField !== 'angle') {
+            setAngleValue(angle.toFixed(1));
+        }
+    }, [angle, focusedField]);
+
+    // Global Key Listener for "AutoCAD-style" direct input
+    useEffect(() => {
+        const handleGlobalKeyDown = (e: KeyboardEvent) => {
+            // Ignore if already focused or holding modifiers
+            if (document.activeElement === lengthInputRef.current || document.activeElement === angleInputRef.current) return;
+            if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+            // If user types a number, dot, or minus
+            if (/^[\d.-]$/.test(e.key)) {
+                e.preventDefault();
+                setFocusedField('length');
+                // Overwrite current dynamic value with the typed character
+                setLengthValue(e.key);
+                lengthInputRef.current?.focus();
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+    }, []);
+
+    const handleKeyDown = useCallback((e: React.KeyboardEvent, field: 'length' | 'angle') => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            const len = parseFloat(lengthValue);
+            const ang = parseFloat(angleValue);
+            // Use current props if parse fails (empty string)
+            onSubmit(isNaN(len) ? length : len, isNaN(ang) ? angle : ang);
+            // Defocus after submit
+            (e.target as HTMLInputElement).blur();
+            setFocusedField(null);
+            // Restore dynamic tracking
+        } else if (e.key === 'Tab') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (field === 'length') {
+                setFocusedField('angle');
+                // When tabbing to angle, select all for easy overwrite
+                setTimeout(() => angleInputRef.current?.select(), 0);
+            } else {
+                setFocusedField('length');
+                setTimeout(() => lengthInputRef.current?.select(), 0);
+            }
+        } else if (e.key === 'Escape') {
+            (e.target as HTMLInputElement).blur();
+            setFocusedField(null);
+        }
+    }, [lengthValue, angleValue, length, angle, onSubmit]);
+
+    // Auto-focus logic when field changes via Tab
+    useEffect(() => {
+        if (focusedField === 'length') {
+            lengthInputRef.current?.focus();
+        } else if (focusedField === 'angle') {
+            angleInputRef.current?.focus();
+        }
+    }, [focusedField]);
+
+    return (
+        <Html
+            position={position}
+            style={{ pointerEvents: 'auto' }}
+            zIndexRange={[200, 100]}
+        >
+            <div style={styles.inputContainer} onClick={(e) => e.stopPropagation()}>
+                <div style={styles.inputRow}>
+                    <span style={styles.inputLabel}>L:</span>
+                    <input
+                        ref={lengthInputRef}
+                        type="text"
+                        style={{
+                            ...styles.inputField,
+                            ...(focusedField === 'length' ? styles.inputFieldFocused : {})
+                        }}
+                        value={lengthValue}
+                        onChange={(e) => setLengthValue(e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, 'length')}
+                        onFocus={() => {
+                            if (focusedField !== 'length') {
+                                setFocusedField('length');
+                                lengthInputRef.current?.select();
+                            }
+                        }}
+                        onBlur={() => {
+                            // Delay blur slightly to allow click-to-focus on other field
+                            setTimeout(() => {
+                                if (document.activeElement !== angleInputRef.current && document.activeElement !== lengthInputRef.current) {
+                                    setFocusedField(null);
+                                }
+                            }, 100);
+                        }}
+                    />
+                    <span style={styles.inputUnit}>{unit}</span>
+                </div>
+                <div style={styles.inputRow}>
+                    <span style={styles.inputLabel}>A:</span>
+                    <input
+                        ref={angleInputRef}
+                        type="text"
+                        style={{
+                            ...styles.inputField,
+                            ...(focusedField === 'angle' ? styles.inputFieldFocused : {})
+                        }}
+                        value={angleValue}
+                        onChange={(e) => setAngleValue(e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, 'angle')}
+                        onFocus={() => {
+                            if (focusedField !== 'angle') {
+                                setFocusedField('angle');
+                                angleInputRef.current?.select();
+                            }
+                        }}
+                    />
+                    <span style={styles.inputUnit}>°</span>
+                </div>
+                <div style={styles.inputHint}>Tab: Geçiş | Enter: Tamamla</div>
+            </div>
+        </Html>
+    );
 };
 
 const DynamicInput = () => {
-    const { activeCommand, tempPoints, cursorPosition, step, baseUnit, drawingUnit, activeGrip } = useDrawing();
+    const { activeCommand, tempPoints, cursorPosition, step, baseUnit, drawingUnit, activeGrip, handleCommandInput } = useDrawing();
 
     // Grip düzenleme modu için ölçü gösterimi
     if (activeGrip) {
@@ -189,17 +389,24 @@ const DynamicInput = () => {
         0.1
     ];
 
-    // Açı yayı için noktalar
-    const arcRadius = Math.min(dist * 0.3, 50);
+    // Açı yayı için noktalar - sadece açı 5-355 derece arasındaysa göster
+    const arcRadius = Math.min(rawDist * 0.3, 50);
     const arcPoints: [number, number, number][] = [];
     const arcSegments = 20;
-    for (let i = 0; i <= arcSegments; i++) {
-        const t = (i / arcSegments) * (angleNorm * Math.PI / 180);
-        arcPoints.push([
-            lastPoint[0] + Math.cos(t) * arcRadius,
-            lastPoint[1] + Math.sin(t) * arcRadius,
-            0.1
-        ]);
+    // Açıyı radyan cinsinden hesapla (0'dan açıya kadar)
+    const angleRad = Math.atan2(dy, dx);
+    const showArc = angleNorm > 5 && angleNorm < 355;
+
+    if (showArc && rawDist > 15) {
+        for (let i = 0; i <= arcSegments; i++) {
+            // 0'dan mevcut açıya kadar çiz (pozitif yönde)
+            const t = (i / arcSegments) * angleRad;
+            arcPoints.push([
+                lastPoint[0] + Math.cos(t) * arcRadius,
+                lastPoint[1] + Math.sin(t) * arcRadius,
+                0.08
+            ]);
+        }
     }
 
     // Açı etiketi pozisyonu
@@ -214,13 +421,34 @@ const DynamicInput = () => {
         0.1
     ];
 
+    // Handle dimension input submit - calculate new point based on length and angle
+    const handleDimensionSubmit = useCallback((inputLength: number, inputAngle: number) => {
+        if (!lastPoint) return;
+
+        // Convert angle to radians
+        const angleRad = inputAngle * Math.PI / 180;
+
+        // Convert length from drawing unit to base unit
+        const lengthInBaseUnit = convertToUnit(inputLength, drawingUnit, baseUnit);
+
+        // Calculate new point
+        const newPoint: Point = [
+            lastPoint[0] + Math.cos(angleRad) * lengthInBaseUnit,
+            lastPoint[1] + Math.sin(angleRad) * lengthInBaseUnit,
+            lastPoint[2] || 0
+        ];
+
+        // Call handleCommandInput with the new point
+        handleCommandInput(newPoint);
+    }, [lastPoint, drawingUnit, baseUnit, handleCommandInput]);
+
     // LINE ve POLYLINE için
     if (activeCommand === 'LINE' || activeCommand === 'POLYLINE') {
         // Referans zemin çizgisi (yatay) - başlangıç noktasından sağa doğru
-        const baseLineLength = Math.min(dist * 0.5, 80);
+        const baseLineLength = Math.min(rawDist * 0.5, 80);
         const baseLinePoints: [number, number, number][] = [
-            [lastPoint[0], lastPoint[1], 0.05],
-            [lastPoint[0] + baseLineLength, lastPoint[1], 0.05]
+            [lastPoint[0], lastPoint[1], 0.04],
+            [lastPoint[0] + baseLineLength, lastPoint[1], 0.04]
         ];
 
         // Açı etiketi pozisyonu - çizginin altında
@@ -231,10 +459,17 @@ const DynamicInput = () => {
             0.1
         ];
 
+        // Input panel pozisyonu - cursor yanında
+        const inputPanelPos: [number, number, number] = [
+            cursorPosition[0] + 25,
+            cursorPosition[1] + 25,
+            0.2
+        ];
+
         return (
             <group>
                 {/* Referans zemin çizgisi (silik yatay çizgi) */}
-                {dist > 15 && angleNorm > 5 && angleNorm < 355 && (
+                {rawDist > 15 && angleNorm > 5 && angleNorm < 355 && (
                     <Line
                         points={baseLinePoints}
                         color="#888888"
@@ -244,11 +479,12 @@ const DynamicInput = () => {
                         dashed
                         dashSize={3}
                         gapSize={2}
+                        position={[0, 0, -0.01]} // Slightly below 0.05
                     />
                 )}
 
                 {/* Açı yayı (silik) */}
-                {dist > 15 && angleNorm > 5 && angleNorm < 355 && (
+                {arcPoints.length > 1 && (
                     <Line
                         points={arcPoints}
                         color="#00ff00"
@@ -259,7 +495,7 @@ const DynamicInput = () => {
                 )}
 
                 {/* Uzunluk etiketi - çizginin tam üzerinde (orta nokta) */}
-                {dist > 5 && (
+                {rawDist > 5 && (
                     <Html
                         position={midPoint}
                         style={{ pointerEvents: 'none' }}
@@ -276,7 +512,7 @@ const DynamicInput = () => {
                 )}
 
                 {/* Açı etiketi - çizginin altında */}
-                {dist > 25 && angleNorm > 5 && angleNorm < 355 && (
+                {rawDist > 25 && angleNorm > 5 && angleNorm < 355 && (
                     <Html
                         position={angleLabelBelowPos}
                         style={{ pointerEvents: 'none' }}
@@ -287,10 +523,19 @@ const DynamicInput = () => {
                     </Html>
                 )}
 
+                {/* Editable Input Panel - cursor yanında */}
+                <DimensionInputPanel
+                    position={inputPanelPos}
+                    length={dist}
+                    angle={angleNorm}
+                    unit={drawingUnit}
+                    onSubmit={handleDimensionSubmit}
+                />
+
                 {/* Koordinat tooltip */}
                 <Html
                     position={[cursorPosition[0], cursorPosition[1], 0.1]}
-                    style={{ pointerEvents: 'none', transform: 'translate(15px, -25px)' }}
+                    style={{ pointerEvents: 'none', transform: 'translate(15px, -55px)' }}
                     zIndexRange={[100, 0]}
                 >
                     <div style={styles.coordTooltip}>
