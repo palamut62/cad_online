@@ -45,7 +45,10 @@ const MainLayout = () => {
         finishPrintWindow,
         // Layers
         layerDialogState,
-        setLayerDialogState
+        setLayerDialogState,
+        // In-place text editor
+        inPlaceTextEditorState,
+        cancelInPlaceEdit
     } = useDrawing();
 
 
@@ -55,7 +58,10 @@ const MainLayout = () => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
                 console.log("ESC pressed");
-                if (activeGrip) {
+                if (inPlaceTextEditorState.isOpen) {
+                    // Cancel in-place text editor first
+                    cancelInPlaceEdit();
+                } else if (activeGrip) {
                     // Cancel grip editing first (restores original entity)
                     cancelGrip();
                 } else if (printWindowMode) {
@@ -71,7 +77,7 @@ const MainLayout = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [cancelCommand, clearSelection, activeCommand, selectedIds, activeGrip, cancelGrip, printWindowMode, finishPrintWindow]);
+    }, [cancelCommand, clearSelection, activeCommand, selectedIds, activeGrip, cancelGrip, printWindowMode, finishPrintWindow, inPlaceTextEditorState.isOpen, cancelInPlaceEdit]);
 
     return (
         <div className="main-layout">

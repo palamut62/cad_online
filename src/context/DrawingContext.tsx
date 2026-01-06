@@ -255,7 +255,7 @@ interface DrawingContextValue {
     width?: number;
     rotation?: number;
     style?: any;
-    onSubmit?: (text: string) => void;
+    onSubmit?: (text: string, style?: any) => void;
     onCancel?: () => void;
   };
   setInPlaceTextEditorState: React.Dispatch<React.SetStateAction<{
@@ -266,10 +266,10 @@ interface DrawingContextValue {
     width?: number;
     rotation?: number;
     style?: any;
-    onSubmit?: (text: string) => void;
+    onSubmit?: (text: string, style?: any) => void;
     onCancel?: () => void;
   }>>;
-  submitInPlaceEdit: (text: string) => void;
+  submitInPlaceEdit: (text: string, style?: { height?: number; fontFamily?: string; color?: string; fontWeight?: string; fontStyle?: string; justification?: string }) => void;
   cancelInPlaceEdit: () => void;
 
   // Print System State
@@ -414,9 +414,9 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     onCancel?: () => void;
   }>({ isOpen: false });
 
-  const submitInPlaceEdit = useCallback((text: string) => {
+  const submitInPlaceEdit = useCallback((text: string, style?: { height?: number; fontFamily?: string; color?: string; fontWeight?: string; fontStyle?: string; justification?: string }) => {
     if (inPlaceTextEditorState.onSubmit) {
-      inPlaceTextEditorState.onSubmit(text);
+      inPlaceTextEditorState.onSubmit(text, style);
     }
     setInPlaceTextEditorState(prev => ({ ...prev, isOpen: false }));
   }, [inPlaceTextEditorState]);
@@ -1656,21 +1656,35 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         setTempPoints([point]);
         setStep(2);
 
-        // Open Dialog instead of prompt
-        setTextDialogState({
+        // Open In-Place Text Editor instead of dialog (AutoCAD style)
+        setInPlaceTextEditorState({
           isOpen: true,
-          mode: 'TEXT',
-          initialValues: { height: 10, rotation: 0 },
-          callback: (data) => {
-            addEntity({
-              type: 'TEXT',
-              position: point,
-              text: data.text,
-              height: data.height,
-              rotation: (data.rotation || 0) * Math.PI / 180,
-              color: '#fff',
-              layer: '0'
-            });
+          position: point,
+          initialText: '',
+          style: { height: 10, rotation: 0, fontFamily: 'Arial', color: '#FFFFFF' },
+          onSubmit: (text: string, style?: any) => {
+            if (text.trim()) {
+              captureBeforeState();
+              addEntity({
+                type: 'TEXT',
+                position: point,
+                text: text,
+                height: style?.height || 10,
+                rotation: 0,
+                color: style?.color || '#FFFFFF',
+                layer: '0',
+                justification: style?.justification || 'left',
+                textStyle: {
+                  fontFamily: style?.fontFamily || 'Arial',
+                  fontWeight: style?.fontWeight || 'normal',
+                  fontStyle: style?.fontStyle || 'normal'
+                }
+              });
+              createHistoryItem('TEXT' as CommandType);
+            }
+            cancelCommand();
+          },
+          onCancel: () => {
             cancelCommand();
           }
         });

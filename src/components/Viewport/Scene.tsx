@@ -7,6 +7,7 @@ import EntitiesRenderer from './EntitiesRenderer';
 import DynamicInput from './DynamicInput';
 import PreviewRenderer from './PreviewRenderer';
 import TransformationPreview from './TransformationPreview';
+import InPlaceTextEditor from './InPlaceTextEditor';
 import { useDrawing } from '../../context/DrawingContext';
 import type { Entity, Point } from '../../types/entities';
 
@@ -545,6 +546,7 @@ const Scene = () => {
             <DynamicInput />
             <ZoomWindowBoxRenderer />
             <PrintWindowBoxRenderer />
+            <InPlaceTextEditor />
         </>
     );
 };

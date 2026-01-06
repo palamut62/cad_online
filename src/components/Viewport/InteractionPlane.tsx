@@ -46,6 +46,7 @@ const InteractionPlane = React.memo(() => {
         activeCommand,
         setTextDialogState,
         setTableDialogState,
+        setInPlaceTextEditorState,
         updateEntity,
         handleCommandInput,
         handleMouseMove,
@@ -266,33 +267,41 @@ const InteractionPlane = React.memo(() => {
             const entity = entities.find(e => e.id === bestEntId);
             if (!entity) return;
             if (entity.type === 'TEXT' || entity.type === 'MTEXT') {
-                // Düzenleme diyaloğunu aç
-                setTextDialogState({
+                // Yerinde metin düzenleme editörü aç (AutoCAD tarzı)
+                const textEntity = entity as any;
+                setInPlaceTextEditorState({
                     isOpen: true,
-                    mode: entity.type as 'TEXT' | 'MTEXT',
-                    initialValues: {
-                        text: (entity as any).text,
-                        height: (entity as any).height,
-                        rotation: (entity as any).rotation ? (entity as any).rotation * 180 / Math.PI : 0,
-                        justification: (entity as any).justification,
-                        width: (entity as any).width,
-                        lineSpacing: (entity as any).lineSpacing,
-                        color: (entity as any).color
+                    entityId: entity.id,
+                    position: textEntity.position,
+                    initialText: textEntity.text || '',
+                    style: {
+                        height: textEntity.height || 10,
+                        rotation: textEntity.rotation || 0,
+                        fontFamily: textEntity.textStyle?.fontFamily || 'Arial',
+                        color: textEntity.color || '#FFFFFF',
+                        fontWeight: textEntity.textStyle?.fontWeight || 'normal',
+                        fontStyle: textEntity.textStyle?.fontStyle || 'normal',
+                        justification: textEntity.justification || 'left'
                     },
-                    callback: (data) => {
-                        // Entity güncelle
-                        updateEntity(entity.id, {
-                            ...entity,
-                            text: data.text,
-                            height: data.height,
-                            rotation: (data.rotation || 0) * Math.PI / 180,
-                            justification: data.justification,
-                            color: data.color,
-                            ...(entity.type === 'MTEXT' ? {
-                                width: data.width,
-                                lineSpacing: data.lineSpacing
-                            } : {})
-                        });
+                    onSubmit: (newText: string, style?: any) => {
+                        if (newText.trim()) {
+                            // Entity güncelle
+                            updateEntity(entity.id, {
+                                ...entity,
+                                text: newText,
+                                height: style?.height || textEntity.height || 10,
+                                color: style?.color || textEntity.color || '#FFFFFF',
+                                justification: style?.justification || textEntity.justification || 'left',
+                                textStyle: {
+                                    fontFamily: style?.fontFamily || textEntity.textStyle?.fontFamily || 'Arial',
+                                    fontWeight: style?.fontWeight || textEntity.textStyle?.fontWeight || 'normal',
+                                    fontStyle: style?.fontStyle || textEntity.textStyle?.fontStyle || 'normal'
+                                }
+                            });
+                        }
+                    },
+                    onCancel: () => {
+                        // İptal edilirse bir şey yapma
                     }
                 });
             } else if (entity.type === 'TABLE') {
@@ -322,7 +331,7 @@ const InteractionPlane = React.memo(() => {
                 });
             }
         }
-    }, [activeCommand, zoomWindowMode, entities, setTextDialogState, setTableDialogState, updateEntity]);
+    }, [activeCommand, zoomWindowMode, entities, setTextDialogState, setTableDialogState, setInPlaceTextEditorState, updateEntity]);
 
     return (
         <mesh
