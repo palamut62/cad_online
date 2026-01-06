@@ -167,20 +167,10 @@ export const closestPointOnEntity = (px: number, py: number, ent: Entity): numbe
 
     // Noktanın hatch içinde olup olmadığını kontrol et
     if (isPointInsidePolygon(px, py, pointVerts)) {
-      // HATCH içindeyse - boundary kenarına yakınlığa göre karar ver
-      // Eğer kenara çok yakınsa (< 3 birim), kenarı seçmek isteyebilir (boundary entity)
-      // Bu yüzden HATCH için küçük bir "iç mesafe" değeri döndür
-      // Bu değer boundary seçiminden biraz daha yüksek olmalı
-      const HATCH_INTERIOR_PRIORITY = 2.5; // Boundary kenarından bu kadar uzaksa HATCH seçilir
-
-      if (minEdgeDist < HATCH_INTERIOR_PRIORITY) {
-        // Kenara yakın - boundary seçimi için kenara mesafeyi döndür
-        // Ama hafif arttır ki tam kenardayken boundary seçilebilsin
-        return minEdgeDist + 0.1;
-      }
-
-      // İç kısımdaysa - seçilebilir mesafe döndür
-      return HATCH_INTERIOR_PRIORITY;
+      // HATCH içindeyse - düşük mesafe döndür (seçimi kolaylaştır)
+      // Bu değer seçim toleransından (15) düşük olmalı
+      // Ama başka entity'ler daha yakınsa onlar seçilsin
+      return Math.min(minEdgeDist, 5); // İçerideyse maksimum 5 birim mesafe döndür
     }
 
     // Dışarıdaysa kenar mesafesi

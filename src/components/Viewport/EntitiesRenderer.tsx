@@ -1128,12 +1128,10 @@ const EntitiesRenderer = React.memo(() => {
     // Memoize grips rendering
     const gripsElements = useMemo(() => {
         if (activeCommand !== null) return null;
-        console.log('Rendering grips for selectedIds:', selectedIds.size);
         return Array.from(selectedIds).map(id => {
             const ent = entities.find(e => e.id === id);
             if (!ent) return null;
             const grips = getGripPoints(ent);
-            console.log('Entity', id, 'type:', ent.type, 'grips:', grips.length);
             return (
                 <group key={`grips-${id}`}>
                     {grips.map((grip, index) => {
