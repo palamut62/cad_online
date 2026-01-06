@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import {
     DimensionSettings,
     DEFAULT_DIMENSION_SETTINGS,
@@ -87,88 +88,153 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
     };
 
     const handleSaveAsDefault = () => {
-        saveDimensionSettings(settings);
-        // Show feedback
-        alert('Ayarlar varsayılan olarak kaydedildi!');
+        saveDimensionSettings(settings); // Already saves to local storage which acts as default
+        // Show feedback - using simple console for now, ideally use a toast
+        console.log('Ayarlar kaydedildi');
     };
 
     const updateSetting = <K extends keyof DimensionSettings>(key: K, value: DimensionSettings[K]) => {
         setSettings(prev => ({ ...prev, [key]: value }));
     };
 
-    return (
-        <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1000
-        }}>
-            <div style={{
-                backgroundColor: '#2d2d2d',
-                borderRadius: '8px',
-                width: '650px',
-                maxHeight: '85vh',
+    const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.target === e.currentTarget) {
+            onClose();
+        }
+    };
+
+    // Design Tokens
+    const colors = {
+        bg: 'rgba(30, 30, 31, 0.98)',
+        surface: 'rgba(45, 45, 48, 0.5)',
+        border: 'rgba(255, 255, 255, 0.1)',
+        accent: '#4cc2ff',
+        textMain: '#ececec',
+        textDim: '#999999',
+        error: '#ff6b6b',
+        success: '#4cffa6',
+        glass: 'blur(16px)',
+        inputBg: 'rgba(0, 0, 0, 0.3)'
+    };
+
+    const inputStyle = {
+        width: '100%',
+        padding: '6px 8px',
+        backgroundColor: colors.inputBg,
+        color: colors.textMain,
+        border: `1px solid ${colors.border}`,
+        borderRadius: '4px',
+        fontFamily: "'Consolas', 'Monaco', monospace",
+        fontSize: '11px'
+    };
+
+    const labelStyle = {
+        display: 'block',
+        marginBottom: '6px',
+        fontSize: '11px',
+        color: colors.textDim
+    };
+
+    const sectionTitleStyle = {
+        marginTop: 0,
+        marginBottom: '16px',
+        fontSize: '12px',
+        color: colors.accent,
+        fontWeight: '700',
+        letterSpacing: '0.5px',
+        textTransform: 'uppercase' as const
+    };
+
+    return ReactDOM.createPortal(
+        <div
+            onClick={handleOverlayClick}
+            style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'rgba(0,0,0,0.6)',
                 display: 'flex',
-                flexDirection: 'column',
-                color: 'white',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
-            }}>
+                justifyContent: 'center',
+                alignItems: 'center',
+                zIndex: 2000,
+                backdropFilter: 'blur(5px)'
+            }}
+        >
+            <div
+                style={{
+                    backgroundColor: colors.bg,
+                    borderRadius: '8px',
+                    width: '700px',
+                    maxHeight: '85vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+                    border: `1px solid ${colors.border}`,
+                    fontFamily: "'Consolas', 'Monaco', monospace",
+                    backdropFilter: colors.glass,
+                    overflow: 'hidden'
+                }}
+            >
                 {/* Header */}
                 <div style={{
-                    padding: '15px 20px',
-                    borderBottom: '1px solid #444',
+                    padding: '12px 16px',
+                    borderBottom: `1px solid ${colors.border}`,
                     display: 'flex',
                     justifyContent: 'space-between',
-                    alignItems: 'center'
+                    alignItems: 'center',
+                    background: 'rgba(255, 255, 255, 0.03)'
                 }}>
-                    <h3 style={{ margin: 0, fontSize: '16px' }}>Ölçülendirme Ayarları</h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="material-icons" style={{ color: colors.accent, fontSize: '18px' }}>straighten</span>
+                        <span style={{ fontSize: '12px', fontWeight: '700', letterSpacing: '0.5px', color: colors.textMain }}>DIMENSION SETTINGS</span>
+                    </div>
                     <button
                         onClick={onClose}
                         style={{
                             background: 'none',
                             border: 'none',
-                            color: '#888',
-                            fontSize: '24px',
+                            color: colors.textDim,
                             cursor: 'pointer',
-                            padding: 0,
-                            lineHeight: 1
+                            padding: '0',
+                            display: 'flex',
+                            opacity: 0.6
                         }}
                     >
-                        ×
+                        <span className="material-icons" style={{ fontSize: '16px' }}>close</span>
                     </button>
                 </div>
 
                 {/* Tabs */}
                 <div style={{
                     display: 'flex',
-                    borderBottom: '1px solid #444',
-                    padding: '0 10px'
+                    borderBottom: `1px solid ${colors.border}`,
+                    padding: '0 16px',
+                    background: 'rgba(0,0,0,0.2)'
                 }}>
                     {[
-                        { id: 'general', label: 'Genel' },
-                        { id: 'arrows', label: 'Oklar' },
-                        { id: 'lines', label: 'Çizgiler' },
-                        { id: 'text', label: 'Metin' }
+                        { id: 'general', label: 'GENERAL' },
+                        { id: 'arrows', label: 'ARROWS' },
+                        { id: 'lines', label: 'LINES' },
+                        { id: 'text', label: 'TEXT' }
                     ].map(tab => (
                         <button
                             key={tab.id}
                             type="button"
                             onClick={() => setActiveTab(tab.id as any)}
                             style={{
-                                padding: '12px 20px',
+                                padding: '12px 16px',
                                 background: 'none',
                                 border: 'none',
-                                color: activeTab === tab.id ? '#4cc2ff' : '#888',
-                                borderBottom: activeTab === tab.id ? '2px solid #4cc2ff' : '2px solid transparent',
+                                color: activeTab === tab.id ? colors.accent : colors.textDim,
+                                borderBottom: activeTab === tab.id ? `2px solid ${colors.accent}` : '2px solid transparent',
                                 cursor: 'pointer',
-                                fontSize: '13px',
-                                fontWeight: activeTab === tab.id ? 600 : 400
+                                fontSize: '11px',
+                                fontFamily: 'inherit',
+                                fontWeight: activeTab === tab.id ? '700' : '400',
+                                transition: 'all 0.2s',
+                                letterSpacing: '0.5px'
                             }}
                         >
                             {tab.label}
@@ -177,20 +243,18 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                 </div>
 
                 {/* Content */}
-                <div style={{
+                <div className="custom-scrollbar" style={{
                     flex: 1,
-                    overflow: 'auto',
-                    padding: '20px'
+                    overflowY: 'auto',
+                    padding: '24px'
                 }}>
                     {activeTab === 'general' && (
                         <div>
-                            <h4 style={{ marginTop: 0, marginBottom: '15px', fontSize: '14px', color: '#4cc2ff' }}>
-                                Genel Ayarlar
-                            </h4>
+                            <h4 style={sectionTitleStyle}>General Settings</h4>
 
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Ölçek Faktörü: {settings.scale}x
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={labelStyle}>
+                                    Scale Factor: <span style={{ color: colors.textMain }}>{settings.scale}x</span>
                                 </label>
                                 <input
                                     type="range"
@@ -199,26 +263,17 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                     step="0.1"
                                     value={settings.scale}
                                     onChange={e => updateSetting('scale', parseFloat(e.target.value))}
-                                    style={{ width: '100%' }}
+                                    style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
                                 />
                             </div>
 
-                            <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
-                                <div style={{ flex: 1 }}>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                        Ondalık Hassasiyet
-                                    </label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                                <div>
+                                    <label style={labelStyle}>Decimal Precision</label>
                                     <select
                                         value={settings.precision}
                                         onChange={e => updateSetting('precision', e.target.value as DecimalFormat)}
-                                        style={{
-                                            width: '100%',
-                                            padding: '8px',
-                                            backgroundColor: '#444',
-                                            color: 'white',
-                                            border: '1px solid #555',
-                                            borderRadius: '4px'
-                                        }}
+                                        style={inputStyle}
                                     >
                                         {DECIMAL_FORMATS.map(f => (
                                             <option key={f.value} value={f.value}>
@@ -228,21 +283,12 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                     </select>
                                 </div>
 
-                                <div style={{ flex: 1 }}>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                        Açı Formatı
-                                    </label>
+                                <div>
+                                    <label style={labelStyle}>Angle Format</label>
                                     <select
                                         value={settings.angleFormat}
                                         onChange={e => updateSetting('angleFormat', e.target.value as AngleFormat)}
-                                        style={{
-                                            width: '100%',
-                                            padding: '8px',
-                                            backgroundColor: '#444',
-                                            color: 'white',
-                                            border: '1px solid #555',
-                                            borderRadius: '4px'
-                                        }}
+                                        style={inputStyle}
                                     >
                                         {ANGLE_FORMATS.map(f => (
                                             <option key={f.value} value={f.value}>
@@ -253,114 +299,91 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                 </div>
                             </div>
 
-                            <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
-                                <div style={{ flex: 1 }}>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                        Açı Hassasiyeti (Basamak)
-                                    </label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                                <div>
+                                    <label style={labelStyle}>Angle Precision</label>
                                     <input
                                         type="number"
                                         min="0"
                                         max="6"
                                         value={settings.anglePrecision}
                                         onChange={e => updateSetting('anglePrecision', parseInt(e.target.value) || 1)}
-                                        style={{
-                                            width: '100%',
-                                            padding: '8px',
-                                            backgroundColor: '#444',
-                                            color: 'white',
-                                            border: '1px solid #555',
-                                            borderRadius: '4px'
-                                        }}
+                                        style={inputStyle}
                                     />
                                 </div>
                             </div>
 
                             <div style={{
-                                backgroundColor: '#363636',
-                                padding: '15px',
+                                backgroundColor: 'rgba(255,255,255,0.03)',
+                                padding: '16px',
                                 borderRadius: '4px',
-                                marginBottom: '20px'
+                                marginBottom: '24px',
+                                border: `1px solid ${colors.border}`
                             }}>
-                                <label style={{ display: 'flex', alignItems: 'center', fontSize: '13px', marginBottom: '10px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', marginBottom: '12px', cursor: 'pointer', color: colors.textMain }}>
                                     <input
                                         type="checkbox"
                                         checked={settings.suppressLeadingZeros}
                                         onChange={e => updateSetting('suppressLeadingZeros', e.target.checked)}
                                         style={{ marginRight: '8px' }}
                                     />
-                                    Baştaki sıfırları gizle (.25)
+                                    Suppress Leading Zeros (.25)
                                 </label>
-                                <label style={{ display: 'flex', alignItems: 'center', fontSize: '13px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', cursor: 'pointer', color: colors.textMain }}>
                                     <input
                                         type="checkbox"
                                         checked={settings.suppressTrailingZeros}
                                         onChange={e => updateSetting('suppressTrailingZeros', e.target.checked)}
                                         style={{ marginRight: '8px' }}
                                     />
-                                    Sondaki sıfırları gizle (1.)
+                                    Suppress Trailing Zeros (1.)
                                 </label>
                             </div>
 
-                            <h4 style={{ marginTop: 0, marginBottom: '15px', fontSize: '14px', color: '#4cc2ff' }}>
-                                Birim
-                            </h4>
+                            <h4 style={sectionTitleStyle}>Units</h4>
 
-                            <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-                                <div style={{ flex: 1 }}>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                        Birim Gösterimi
-                                    </label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '16px' }}>
+                                <div>
+                                    <label style={labelStyle}>Unit Display</label>
                                     <select
                                         value={settings.unitDisplay}
                                         onChange={e => updateSetting('unitDisplay', e.target.value as any)}
-                                        style={{
-                                            width: '100%',
-                                            padding: '8px',
-                                            backgroundColor: '#444',
-                                            color: 'white',
-                                            border: '1px solid #555',
-                                            borderRadius: '4px'
-                                        }}
+                                        style={inputStyle}
                                     >
-                                        <option value="none">Gösterme</option>
-                                        <option value="prefix">Önek (mm 25)</option>
-                                        <option value="suffix">Sonek (25 mm)</option>
+                                        <option value="none">None</option>
+                                        <option value="prefix">Prefix (mm 25)</option>
+                                        <option value="suffix">Suffix (25 mm)</option>
                                     </select>
                                 </div>
                             </div>
 
-                            <label style={{ display: 'flex', alignItems: 'center', fontSize: '13px', marginBottom: '10px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', marginBottom: '8px', cursor: 'pointer', color: colors.textMain }}>
                                 <input
                                     type="checkbox"
                                     checked={settings.showUnitSymbol}
                                     onChange={e => updateSetting('showUnitSymbol', e.target.checked)}
                                     style={{ marginRight: '8px' }}
                                 />
-                                Birim sembolünü göster
+                                Show Unit Symbol
                             </label>
-                            <label style={{ display: 'flex', alignItems: 'center', fontSize: '13px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', cursor: 'pointer', color: colors.textMain }}>
                                 <input
                                     type="checkbox"
                                     checked={settings.useDrawingScale}
                                     onChange={e => updateSetting('useDrawingScale', e.target.checked)}
                                     style={{ marginRight: '8px' }}
                                 />
-                                Çizim ölçeğini kullan
+                                Use Drawing Scale
                             </label>
                         </div>
                     )}
 
                     {activeTab === 'arrows' && (
                         <div>
-                            <h4 style={{ marginTop: 0, marginBottom: '15px', fontSize: '14px', color: '#4cc2ff' }}>
-                                Ok Ayarları
-                            </h4>
+                            <h4 style={sectionTitleStyle}>Arrow Settings</h4>
 
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Ok Şekli
-                                </label>
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={labelStyle}>Arrow Style</label>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
                                     {ARROW_STYLES.map(style => (
                                         <button
@@ -368,14 +391,16 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                             type="button"
                                             onClick={() => updateSetting('arrowStyle', style.value)}
                                             style={{
-                                                padding: '10px',
-                                                backgroundColor: settings.arrowStyle === style.value ? '#4cc2ff' : '#444',
-                                                color: settings.arrowStyle === style.value ? 'black' : 'white',
-                                                border: settings.arrowStyle === style.value ? '2px solid #4cc2ff' : '1px solid #555',
+                                                padding: '8px',
+                                                backgroundColor: settings.arrowStyle === style.value ? 'rgba(76, 194, 255, 0.15)' : 'rgba(255,255,255,0.03)',
+                                                color: settings.arrowStyle === style.value ? colors.accent : colors.textDim,
+                                                border: `1px solid ${settings.arrowStyle === style.value ? colors.accent : colors.border}`,
                                                 borderRadius: '4px',
                                                 cursor: 'pointer',
-                                                fontSize: '12px',
-                                                textAlign: 'center'
+                                                fontSize: '11px',
+                                                fontFamily: 'inherit',
+                                                textAlign: 'center',
+                                                transition: 'all 0.2s'
                                             }}
                                         >
                                             {style.label}
@@ -384,10 +409,8 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                 </div>
                             </div>
 
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Ok Yönü
-                                </label>
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={labelStyle}>Arrow Direction</label>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     {ARROW_DIRECTIONS.map(dir => (
                                         <button
@@ -396,13 +419,15 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                             onClick={() => updateSetting('arrowDirection', dir.value)}
                                             style={{
                                                 flex: 1,
-                                                padding: '10px',
-                                                backgroundColor: settings.arrowDirection === dir.value ? '#4cc2ff' : '#444',
-                                                color: settings.arrowDirection === dir.value ? 'black' : 'white',
-                                                border: settings.arrowDirection === dir.value ? '2px solid #4cc2ff' : '1px solid #555',
+                                                padding: '8px',
+                                                backgroundColor: settings.arrowDirection === dir.value ? 'rgba(76, 194, 255, 0.15)' : 'rgba(255,255,255,0.03)',
+                                                color: settings.arrowDirection === dir.value ? colors.accent : colors.textDim,
+                                                border: `1px solid ${settings.arrowDirection === dir.value ? colors.accent : colors.border}`,
                                                 borderRadius: '4px',
                                                 cursor: 'pointer',
-                                                fontSize: '12px'
+                                                fontSize: '11px',
+                                                fontFamily: 'inherit',
+                                                transition: 'all 0.2s'
                                             }}
                                         >
                                             {dir.label}
@@ -411,9 +436,9 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                 </div>
                             </div>
 
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Ok Boyutu: {settings.arrowSize}
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={labelStyle}>
+                                    Arrow Size: <span style={{ color: colors.textMain }}>{settings.arrowSize}</span>
                                 </label>
                                 <input
                                     type="range"
@@ -422,13 +447,13 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                     step="0.5"
                                     value={settings.arrowSize}
                                     onChange={e => updateSetting('arrowSize', parseFloat(e.target.value))}
-                                    style={{ width: '100%' }}
+                                    style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
                                 />
                             </div>
 
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Ok Boyutu Çarpanı: {settings.arrowSizeMultiplier}x
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={labelStyle}>
+                                    Arrow Size Multiplier: <span style={{ color: colors.textMain }}>{settings.arrowSizeMultiplier}x</span>
                                 </label>
                                 <input
                                     type="range"
@@ -437,45 +462,48 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                     step="0.1"
                                     value={settings.arrowSizeMultiplier}
                                     onChange={e => updateSetting('arrowSizeMultiplier', parseFloat(e.target.value))}
-                                    style={{ width: '100%' }}
+                                    style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
                                 />
                             </div>
 
                             <div>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Ok Rengi
-                                </label>
-                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <label style={labelStyle}>Arrow Color</label>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                                     {PRESET_COLORS.map(c => (
                                         <button
                                             key={c.value}
                                             type="button"
                                             onClick={() => updateSetting('arrowColor', c.value)}
                                             style={{
-                                                width: '28px',
-                                                height: '28px',
+                                                width: '24px',
+                                                height: '24px',
                                                 backgroundColor: c.value,
-                                                border: settings.arrowColor === c.value ? '3px solid #4cc2ff' : '2px solid #666',
+                                                border: settings.arrowColor === c.value ? `2px solid ${colors.accent}` : `1px solid ${colors.border}`,
                                                 borderRadius: '4px',
                                                 cursor: 'pointer',
                                                 padding: 0
                                             }}
+                                            title={c.label}
                                         />
                                     ))}
-                                    <input
-                                        type="color"
-                                        value={settings.arrowColor}
-                                        onChange={e => updateSetting('arrowColor', e.target.value)}
-                                        style={{
-                                            width: '28px',
-                                            height: '28px',
-                                            padding: 0,
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            backgroundColor: 'transparent'
-                                        }}
-                                    />
-                                    <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>
+                                    <div style={{ position: 'relative', width: '24px', height: '24px', overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border}` }}>
+                                        <input
+                                            type="color"
+                                            value={settings.arrowColor}
+                                            onChange={e => updateSetting('arrowColor', e.target.value)}
+                                            style={{
+                                                position: 'absolute',
+                                                top: '-50%',
+                                                left: '-50%',
+                                                width: '200%',
+                                                height: '200%',
+                                                padding: 0,
+                                                border: 'none',
+                                                cursor: 'pointer'
+                                            }}
+                                        />
+                                    </div>
+                                    <span style={{ fontSize: '11px', color: colors.textDim, fontFamily: 'monospace' }}>
                                         {settings.arrowColor}
                                     </span>
                                 </div>
@@ -485,14 +513,12 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
 
                     {activeTab === 'lines' && (
                         <div>
-                            <h4 style={{ marginTop: 0, marginBottom: '15px', fontSize: '14px', color: '#4cc2ff' }}>
-                                Çizgi Ayarları
-                            </h4>
+                            <h4 style={sectionTitleStyle}>Line Settings</h4>
 
-                            <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
-                                <div style={{ flex: 1 }}>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                        Uzantı Ofseti: {settings.extensionLineOffset}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                                <div>
+                                    <label style={labelStyle}>
+                                        Extension Offset: <span style={{ color: colors.textMain }}>{settings.extensionLineOffset}</span>
                                     </label>
                                     <input
                                         type="range"
@@ -501,14 +527,14 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                         step="0.25"
                                         value={settings.extensionLineOffset}
                                         onChange={e => updateSetting('extensionLineOffset', parseFloat(e.target.value))}
-                                        style={{ width: '100%' }}
+                                        style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
                                     />
-                                    <span style={{ fontSize: '11px', color: '#888' }}>Nesneden uzaklık</span>
+                                    <span style={{ fontSize: '10px', color: colors.textDim, opacity: 0.7 }}>Dist from Object</span>
                                 </div>
 
-                                <div style={{ flex: 1 }}>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                        Uzantı Uzaması: {settings.extensionLineExtend}
+                                <div>
+                                    <label style={labelStyle}>
+                                        Extension Extend: <span style={{ color: colors.textMain }}>{settings.extensionLineExtend}</span>
                                     </label>
                                     <input
                                         type="range"
@@ -517,16 +543,16 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                         step="0.25"
                                         value={settings.extensionLineExtend}
                                         onChange={e => updateSetting('extensionLineExtend', parseFloat(e.target.value))}
-                                        style={{ width: '100%' }}
+                                        style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
                                     />
-                                    <span style={{ fontSize: '11px', color: '#888' }}>Ölçü çizgisinden taşıma</span>
+                                    <span style={{ fontSize: '10px', color: colors.textDim, opacity: 0.7 }}>Extend beyond Dim Line</span>
                                 </div>
                             </div>
 
-                            <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
-                                <div style={{ flex: 1 }}>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                        Ölçü Çizgisi Kalınlığı: {settings.dimLineWeight}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                                <div>
+                                    <label style={labelStyle}>
+                                        Dim Line Weight: <span style={{ color: colors.textMain }}>{settings.dimLineWeight}</span>
                                     </label>
                                     <input
                                         type="range"
@@ -535,13 +561,13 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                         step="0.1"
                                         value={settings.dimLineWeight}
                                         onChange={e => updateSetting('dimLineWeight', parseFloat(e.target.value))}
-                                        style={{ width: '100%' }}
+                                        style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
                                     />
                                 </div>
 
-                                <div style={{ flex: 1 }}>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                        Uzantı Çizgisi Kalınlığı: {settings.extLineWeight}
+                                <div>
+                                    <label style={labelStyle}>
+                                        Ext Line Weight: <span style={{ color: colors.textMain }}>{settings.extLineWeight}</span>
                                     </label>
                                     <input
                                         type="range"
@@ -550,86 +576,90 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                         step="0.1"
                                         value={settings.extLineWeight}
                                         onChange={e => updateSetting('extLineWeight', parseFloat(e.target.value))}
-                                        style={{ width: '100%' }}
+                                        style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
                                     />
                                 </div>
                             </div>
 
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Ölçü Çizgisi Rengi
-                                </label>
-                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={labelStyle}>Dimension Line Color</label>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                                     {PRESET_COLORS.map(c => (
                                         <button
                                             key={c.value}
                                             type="button"
                                             onClick={() => updateSetting('dimLineColor', c.value)}
                                             style={{
-                                                width: '28px',
-                                                height: '28px',
+                                                width: '24px',
+                                                height: '24px',
                                                 backgroundColor: c.value,
-                                                border: settings.dimLineColor === c.value ? '3px solid #4cc2ff' : '2px solid #666',
+                                                border: settings.dimLineColor === c.value ? `2px solid ${colors.accent}` : `1px solid ${colors.border}`,
                                                 borderRadius: '4px',
                                                 cursor: 'pointer',
                                                 padding: 0
                                             }}
                                         />
                                     ))}
-                                    <input
-                                        type="color"
-                                        value={settings.dimLineColor}
-                                        onChange={e => updateSetting('dimLineColor', e.target.value)}
-                                        style={{
-                                            width: '28px',
-                                            height: '28px',
-                                            padding: 0,
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            backgroundColor: 'transparent'
-                                        }}
-                                    />
-                                    <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>
+                                    <div style={{ position: 'relative', width: '24px', height: '24px', overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border}` }}>
+                                        <input
+                                            type="color"
+                                            value={settings.dimLineColor}
+                                            onChange={e => updateSetting('dimLineColor', e.target.value)}
+                                            style={{
+                                                position: 'absolute',
+                                                top: '-50%',
+                                                left: '-50%',
+                                                width: '200%',
+                                                height: '200%',
+                                                padding: 0,
+                                                border: 'none',
+                                                cursor: 'pointer'
+                                            }}
+                                        />
+                                    </div>
+                                    <span style={{ fontSize: '11px', color: colors.textDim, fontFamily: 'monospace' }}>
                                         {settings.dimLineColor}
                                     </span>
                                 </div>
                             </div>
 
                             <div>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Uzantı Çizgisi Rengi
-                                </label>
-                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <label style={labelStyle}>Extension Line Color</label>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                                     {PRESET_COLORS.map(c => (
                                         <button
                                             key={c.value}
                                             type="button"
                                             onClick={() => updateSetting('extLineColor', c.value)}
                                             style={{
-                                                width: '28px',
-                                                height: '28px',
+                                                width: '24px',
+                                                height: '24px',
                                                 backgroundColor: c.value,
-                                                border: settings.extLineColor === c.value ? '3px solid #4cc2ff' : '2px solid #666',
+                                                border: settings.extLineColor === c.value ? `2px solid ${colors.accent}` : `1px solid ${colors.border}`,
                                                 borderRadius: '4px',
                                                 cursor: 'pointer',
                                                 padding: 0
                                             }}
                                         />
                                     ))}
-                                    <input
-                                        type="color"
-                                        value={settings.extLineColor}
-                                        onChange={e => updateSetting('extLineColor', e.target.value)}
-                                        style={{
-                                            width: '28px',
-                                            height: '28px',
-                                            padding: 0,
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            backgroundColor: 'transparent'
-                                        }}
-                                    />
-                                    <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>
+                                    <div style={{ position: 'relative', width: '24px', height: '24px', overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border}` }}>
+                                        <input
+                                            type="color"
+                                            value={settings.extLineColor}
+                                            onChange={e => updateSetting('extLineColor', e.target.value)}
+                                            style={{
+                                                position: 'absolute',
+                                                top: '-50%',
+                                                left: '-50%',
+                                                width: '200%',
+                                                height: '200%',
+                                                padding: 0,
+                                                border: 'none',
+                                                cursor: 'pointer'
+                                            }}
+                                        />
+                                    </div>
+                                    <span style={{ fontSize: '11px', color: colors.textDim, fontFamily: 'monospace' }}>
                                         {settings.extLineColor}
                                     </span>
                                 </div>
@@ -639,13 +669,11 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
 
                     {activeTab === 'text' && (
                         <div>
-                            <h4 style={{ marginTop: 0, marginBottom: '15px', fontSize: '14px', color: '#4cc2ff' }}>
-                                Metin Ayarları
-                            </h4>
+                            <h4 style={sectionTitleStyle}>Text Settings</h4>
 
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Metin Yüksekliği: {settings.textHeight}
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={labelStyle}>
+                                    Text Height: <span style={{ color: colors.textMain }}>{settings.textHeight}</span>
                                 </label>
                                 <input
                                     type="range"
@@ -654,13 +682,13 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                     step="0.5"
                                     value={settings.textHeight}
                                     onChange={e => updateSetting('textHeight', parseFloat(e.target.value))}
-                                    style={{ width: '100%' }}
+                                    style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
                                 />
                             </div>
 
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Metin Boşluğu: {settings.textGap}
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={labelStyle}>
+                                    Text Gap: <span style={{ color: colors.textMain }}>{settings.textGap}</span>
                                 </label>
                                 <input
                                     type="range"
@@ -669,14 +697,12 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                     step="0.1"
                                     value={settings.textGap}
                                     onChange={e => updateSetting('textGap', parseFloat(e.target.value))}
-                                    style={{ width: '100%' }}
+                                    style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
                                 />
                             </div>
 
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Hizalama
-                                </label>
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={labelStyle}>Alignment</label>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
                                     {TEXT_ALIGNMENTS.map(align => (
                                         <button
@@ -684,13 +710,15 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                             type="button"
                                             onClick={() => updateSetting('textAlignment', align.value)}
                                             style={{
-                                                padding: '10px',
-                                                backgroundColor: settings.textAlignment === align.value ? '#4cc2ff' : '#444',
-                                                color: settings.textAlignment === align.value ? 'black' : 'white',
-                                                border: settings.textAlignment === align.value ? '2px solid #4cc2ff' : '1px solid #555',
+                                                padding: '8px',
+                                                backgroundColor: settings.textAlignment === align.value ? 'rgba(76, 194, 255, 0.15)' : 'rgba(255,255,255,0.03)',
+                                                color: settings.textAlignment === align.value ? colors.accent : colors.textDim,
+                                                border: `1px solid ${settings.textAlignment === align.value ? colors.accent : colors.border}`,
                                                 borderRadius: '4px',
                                                 cursor: 'pointer',
-                                                fontSize: '12px'
+                                                fontSize: '11px',
+                                                fontFamily: 'inherit',
+                                                transition: 'all 0.2s'
                                             }}
                                         >
                                             {align.label}
@@ -699,96 +727,80 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                 </div>
                             </div>
 
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Metin Rotasyonu
-                                </label>
-                                <select
-                                    value={settings.textRotation}
-                                    onChange={e => updateSetting('textRotation', e.target.value as any)}
-                                    style={{
-                                        width: '100%',
-                                        padding: '8px',
-                                        backgroundColor: '#444',
-                                        color: 'white',
-                                        border: '1px solid #555',
-                                        borderRadius: '4px'
-                                    }}
-                                >
-                                    <option value="aligned">Hizalı (Çizgiye paralel)</option>
-                                    <option value="horizontal">Yatay</option>
-                                </select>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                                <div>
+                                    <label style={labelStyle}>Text Rotation</label>
+                                    <select
+                                        value={settings.textRotation}
+                                        onChange={e => updateSetting('textRotation', e.target.value as any)}
+                                        style={inputStyle}
+                                    >
+                                        <option value="aligned">Aligned</option>
+                                        <option value="horizontal">Horizontal</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label style={labelStyle}>Text Movement</label>
+                                    <select
+                                        value={settings.textMovement}
+                                        onChange={e => updateSetting('textMovement', e.target.value as any)}
+                                        style={inputStyle}
+                                    >
+                                        <option value="moveLine">Move Line</option>
+                                        <option value="moveText">Move Text</option>
+                                        <option value="addLeader">Add Leader</option>
+                                    </select>
+                                </div>
                             </div>
 
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Metin Hareketi (Yetersiz alanda)
-                                </label>
-                                <select
-                                    value={settings.textMovement}
-                                    onChange={e => updateSetting('textMovement', e.target.value as any)}
-                                    style={{
-                                        width: '100%',
-                                        padding: '8px',
-                                        backgroundColor: '#444',
-                                        color: 'white',
-                                        border: '1px solid #555',
-                                        borderRadius: '4px'
-                                    }}
-                                >
-                                    <option value="moveLine">Çizgiyi hareket ettir</option>
-                                    <option value="moveText">Metni hareket ettir</option>
-                                    <option value="addLeader">Lider çizgi ekle</option>
-                                </select>
-                            </div>
-
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Metin Rengi
-                                </label>
-                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={labelStyle}>Text Color</label>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                                     {PRESET_COLORS.map(c => (
                                         <button
                                             key={c.value}
                                             type="button"
                                             onClick={() => updateSetting('textColor', c.value)}
                                             style={{
-                                                width: '28px',
-                                                height: '28px',
+                                                width: '24px',
+                                                height: '24px',
                                                 backgroundColor: c.value,
-                                                border: settings.textColor === c.value ? '3px solid #4cc2ff' : '2px solid #666',
+                                                border: settings.textColor === c.value ? `2px solid ${colors.accent}` : `1px solid ${colors.border}`,
                                                 borderRadius: '4px',
                                                 cursor: 'pointer',
                                                 padding: 0
                                             }}
                                         />
                                     ))}
-                                    <input
-                                        type="color"
-                                        value={settings.textColor}
-                                        onChange={e => updateSetting('textColor', e.target.value)}
-                                        style={{
-                                            width: '28px',
-                                            height: '28px',
-                                            padding: 0,
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            backgroundColor: 'transparent'
-                                        }}
-                                    />
-                                    <span style={{ fontSize: '12px', color: '#888', marginLeft: '8px' }}>
+                                    <div style={{ position: 'relative', width: '24px', height: '24px', overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border}` }}>
+                                        <input
+                                            type="color"
+                                            value={settings.textColor}
+                                            onChange={e => updateSetting('textColor', e.target.value)}
+                                            style={{
+                                                position: 'absolute',
+                                                top: '-50%',
+                                                left: '-50%',
+                                                width: '200%',
+                                                height: '200%',
+                                                padding: 0,
+                                                border: 'none',
+                                                cursor: 'pointer'
+                                            }}
+                                        />
+                                    </div>
+                                    <span style={{ fontSize: '11px', color: colors.textDim, fontFamily: 'monospace' }}>
                                         {settings.textColor}
                                     </span>
                                 </div>
                             </div>
 
                             <div>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                                    Metin Arka Plan Rengi
-                                </label>
-                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <label style={labelStyle}>Text Background Color</label>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                                     {[
-                                        { value: 'transparent', label: 'Şeffaf' },
+                                        { value: 'transparent', label: 'None' },
                                         ...PRESET_COLORS
                                     ].map(c => (
                                         <button
@@ -796,34 +808,38 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
                                             type="button"
                                             onClick={() => updateSetting('textBackgroundColor', c.value)}
                                             style={{
-                                                width: c.value === 'transparent' ? 'auto' : '28px',
-                                                height: '28px',
-                                                minWidth: c.value === 'transparent' ? '60px' : '28px',
-                                                padding: c.value === 'transparent' ? '0 8px' : '0',
-                                                backgroundColor: c.value === 'transparent' ? '#444' : c.value,
-                                                color: 'white',
-                                                border: settings.textBackgroundColor === c.value ? '3px solid #4cc2ff' : '2px solid #666',
+                                                width: c.value === 'transparent' ? 'auto' : '24px',
+                                                minWidth: '24px',
+                                                height: '24px',
+                                                backgroundColor: c.value === 'transparent' ? 'transparent' : c.value,
+                                                border: settings.textBackgroundColor === c.value ? `2px solid ${colors.accent}` : `1px solid ${colors.border}`,
                                                 borderRadius: '4px',
                                                 cursor: 'pointer',
-                                                fontSize: '11px'
+                                                padding: c.value === 'transparent' ? '0 8px' : '0',
+                                                fontSize: '10px',
+                                                color: c.value === 'transparent' ? colors.textDim : 'transparent'
                                             }}
                                         >
-                                            {c.label}
+                                            {c.value === 'transparent' && 'None'}
                                         </button>
                                     ))}
-                                    <input
-                                        type="color"
-                                        value={settings.textBackgroundColor === 'transparent' ? '#ffffff' : settings.textBackgroundColor}
-                                        onChange={e => updateSetting('textBackgroundColor', e.target.value)}
-                                        style={{
-                                            width: '28px',
-                                            height: '28px',
-                                            padding: 0,
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            backgroundColor: 'transparent'
-                                        }}
-                                    />
+                                    <div style={{ position: 'relative', width: '24px', height: '24px', overflow: 'hidden', borderRadius: '4px', border: `1px solid ${colors.border}` }}>
+                                        <input
+                                            type="color"
+                                            value={(settings.textBackgroundColor === 'transparent' ? '#ffffff' : settings.textBackgroundColor) as string}
+                                            onChange={e => updateSetting('textBackgroundColor', e.target.value)}
+                                            style={{
+                                                position: 'absolute',
+                                                top: '-50%',
+                                                left: '-50%',
+                                                width: '200%',
+                                                height: '200%',
+                                                padding: 0,
+                                                border: 'none',
+                                                cursor: 'pointer'
+                                            }}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -832,61 +848,71 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
 
                 {/* Footer */}
                 <div style={{
-                    padding: '15px 20px',
-                    borderTop: '1px solid #444',
+                    padding: '16px',
+                    borderTop: `1px solid ${colors.border}`,
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
+                    justifyContent: 'flex-end',
+                    gap: '12px',
+                    background: 'rgba(0,0,0,0.2)'
                 }}>
                     <button
                         type="button"
                         onClick={handleSaveAsDefault}
                         style={{
                             padding: '8px 16px',
-                            backgroundColor: '#555',
-                            color: 'white',
+                            backgroundColor: 'transparent',
+                            color: colors.textDim,
+                            border: `1px solid ${colors.border}`,
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontFamily: 'inherit',
+                            transition: 'all 0.2s',
+                            marginRight: 'auto'
+                        }}
+                    >
+                        SAVE AS DEFAULT
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        style={{
+                            padding: '8px 16px',
+                            backgroundColor: 'transparent',
+                            color: colors.textMain,
+                            border: `1px solid ${colors.border}`,
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontFamily: 'inherit',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        CANCEL
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleApply}
+                        style={{
+                            padding: '8px 24px',
+                            backgroundColor: colors.accent,
+                            color: '#000',
                             border: 'none',
                             borderRadius: '4px',
                             cursor: 'pointer',
-                            fontSize: '12px'
+                            fontSize: '11px',
+                            fontFamily: 'inherit',
+                            fontWeight: '700',
+                            transition: 'all 0.2s',
+                            boxShadow: '0 2px 8px rgba(76, 194, 255, 0.2)'
                         }}
                     >
-                        Varsayılan olarak Kaydet
+                        APPLY
                     </button>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            style={{
-                                padding: '8px 16px',
-                                backgroundColor: '#555',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            İptal
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleApply}
-                            style={{
-                                padding: '8px 16px',
-                                backgroundColor: '#4cc2ff',
-                                color: 'black',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontWeight: 600
-                            }}
-                        >
-                            Uygula
-                        </button>
-                    </div>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

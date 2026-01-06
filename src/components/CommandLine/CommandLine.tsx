@@ -316,6 +316,51 @@ const CommandLine = () => {
                         </div>
                     </div>
                 </form>
+
+                {/* AI Error Display */}
+                {aiError && (
+                    <div style={{
+                        margin: '0 8px 8px 8px',
+                        padding: '8px 12px',
+                        backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                        borderLeft: '3px solid #ff6b6b',
+                        borderRadius: '0 4px 4px 0',
+                        color: '#ff6b6b',
+                        fontSize: '11px',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '8px',
+                        userSelect: 'text',
+                        animation: 'fadeIn 0.3s ease'
+                    }}>
+                        <span className="material-icons" style={{ fontSize: '16px', marginTop: '1px' }}>error_outline</span>
+                        <div style={{ flex: 1, wordBreak: 'break-word', fontFamily: 'Consolas, monospace' }}>
+                            <div style={{ fontWeight: 600, marginBottom: '2px' }}>AI Hatası:</div>
+                            {aiError}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                navigator.clipboard.writeText(aiError);
+                            }}
+                            style={{
+                                background: 'transparent',
+                                border: '1px solid rgba(255, 107, 107, 0.3)',
+                                borderRadius: '4px',
+                                color: '#ff6b6b',
+                                cursor: 'pointer',
+                                padding: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                transition: 'all 0.2s',
+                                opacity: 0.8
+                            }}
+                            title="Hatayı Kopyala"
+                        >
+                            <span className="material-icons" style={{ fontSize: '14px' }}>content_copy</span>
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

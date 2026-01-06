@@ -120,7 +120,24 @@ const getStoredAgentsConfig = (): AgentsConfiguration => {
     try {
         const stored = localStorage.getItem(STORAGE_KEY_AGENTS_CONFIG);
         if (!stored) return DEFAULT_AGENT_CONFIGS;
-        return JSON.parse(stored);
+
+        const parsed = JSON.parse(stored);
+
+        // Merge with defaults to ensure all new keys exist
+        // This handles migration from old config structures automatically
+        return {
+            ...DEFAULT_AGENT_CONFIGS,
+            ...parsed,
+            // Ensure all keys from DEFAULT are definitely present even if parsed has them missing
+            // (Deep merge might be better but top-level agent keys are enough here)
+            requestAnalyzer: { ...DEFAULT_AGENT_CONFIGS.requestAnalyzer, ...parsed.requestAnalyzer },
+            structureAgent: { ...DEFAULT_AGENT_CONFIGS.structureAgent, ...(parsed.structureAgent || parsed.designStrategy) }, // Migration
+            engineeringDetail: { ...DEFAULT_AGENT_CONFIGS.engineeringDetail, ...parsed.engineeringDetail },
+            geometryGenerator: { ...DEFAULT_AGENT_CONFIGS.geometryGenerator, ...parsed.geometryGenerator },
+            cadFeaturePlanner: { ...DEFAULT_AGENT_CONFIGS.cadFeaturePlanner, ...parsed.cadFeaturePlanner },
+            compilerAgent: { ...DEFAULT_AGENT_CONFIGS.compilerAgent, ...(parsed.compilerAgent || parsed.cadDrawing) }, // Migration
+            validationAgent: { ...DEFAULT_AGENT_CONFIGS.validationAgent, ...(parsed.validationAgent || parsed.jsonValidator) } // Migration
+        };
     } catch {
         return DEFAULT_AGENT_CONFIGS;
     }
@@ -217,6 +234,14 @@ export const AIProvider: React.FC<AIProviderProps> = ({ children }) => {
     const clearHistory = () => {
         setAgentHistory([]);
         localStorage.removeItem(STORAGE_KEY_HISTORY);
+    };
+
+    const deleteHistoryEntry = (id: string) => {
+        setAgentHistory(prev => {
+            const updated = prev.filter(entry => entry.id !== id);
+            localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(updated));
+            return updated;
+        });
     };
 
     const refreshModels = useCallback(async (keyOverride?: string, forceRefresh: boolean = false) => {
@@ -432,6 +457,7 @@ export const AIProvider: React.FC<AIProviderProps> = ({ children }) => {
         activeAgent,
         agentHistory,
         addToHistory,
+        deleteHistoryEntry,
         clearHistory
     };
 

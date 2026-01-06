@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useDrawing } from '../../context/DrawingContext';
-import './PrintDialog.css';
+import './PrintDialog.css'; // Keep for specific print styles if needed, but override main UI
 
 interface PrintSettings {
     printer: string;
@@ -55,6 +56,51 @@ const PrintDialog = () => {
         margins: { top: 10, right: 10, bottom: 10, left: 10 },
         quality: 'normal'
     });
+
+    // Design Tokens
+    const colors = {
+        bg: 'rgba(30, 30, 31, 0.98)',
+        surface: 'rgba(45, 45, 48, 0.5)',
+        border: 'rgba(255, 255, 255, 0.1)',
+        accent: '#4cc2ff',
+        textMain: '#ececec',
+        textDim: '#999999',
+        error: '#ff6b6b',
+        success: '#4cffa6',
+        glass: 'blur(16px)',
+        inputBg: 'rgba(0, 0, 0, 0.3)'
+    };
+
+    const inputStyle = {
+        width: '100%',
+        padding: '6px 8px',
+        backgroundColor: colors.inputBg,
+        color: colors.textMain,
+        border: `1px solid ${colors.border}`,
+        borderRadius: '4px',
+        fontFamily: "'Consolas', 'Monaco', monospace",
+        fontSize: '11px',
+        outline: 'none'
+    };
+
+    const labelStyle = {
+        display: 'block',
+        marginBottom: '4px',
+        fontSize: '11px',
+        color: colors.textDim
+    };
+
+    const sectionTitleStyle = {
+        marginTop: 0,
+        marginBottom: '10px',
+        fontSize: '12px',
+        color: colors.accent,
+        fontWeight: '700',
+        letterSpacing: '0.5px',
+        textTransform: 'uppercase' as const,
+        borderBottom: `1px solid ${colors.border}`,
+        paddingBottom: '4px'
+    };
 
     // Update settings if window box is selected
     useEffect(() => {
@@ -160,40 +206,110 @@ const PrintDialog = () => {
         setPrintDialogState({ isOpen: false });
     };
 
-    return (
-        <div className="print-dialog-overlay" onClick={handleClose}>
-            <div className="print-dialog" onClick={(e) => e.stopPropagation()}>
-                <div className="print-dialog-header">
-                    <span>Plot - Model</span>
-                    <span className="material-icons" style={{ cursor: 'pointer' }} onClick={handleClose}>close</span>
+    const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.target === e.currentTarget) {
+            handleClose();
+        }
+    };
+
+    return ReactDOM.createPortal(
+        <div
+            onClick={handleOverlayClick}
+            style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'rgba(0,0,0,0.6)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                zIndex: 2000,
+                backdropFilter: 'blur(5px)'
+            }}
+        >
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    backgroundColor: colors.bg,
+                    borderRadius: '8px',
+                    width: '800px',
+                    maxWidth: '95vw',
+                    maxHeight: '90vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+                    border: `1px solid ${colors.border}`,
+                    fontFamily: "'Consolas', 'Monaco', monospace",
+                    backdropFilter: colors.glass,
+                    overflow: 'hidden'
+                }}
+            >
+                {/* Header */}
+                <div style={{
+                    padding: '12px 16px',
+                    borderBottom: `1px solid ${colors.border}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'rgba(255, 255, 255, 0.03)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="material-icons" style={{ color: colors.accent, fontSize: '18px' }}>print</span>
+                        <span style={{ fontSize: '12px', fontWeight: '700', letterSpacing: '0.5px', color: colors.textMain }}>PLOT - MODEL</span>
+                    </div>
+                    <button
+                        onClick={handleClose}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            color: colors.textDim,
+                            cursor: 'pointer',
+                            padding: '0',
+                            display: 'flex',
+                            opacity: 0.6
+                        }}
+                    >
+                        <span className="material-icons" style={{ fontSize: '16px' }}>close</span>
+                    </button>
                 </div>
 
-                <div className="print-dialog-body">
+                <div className="custom-scrollbar" style={{
+                    flex: 1,
+                    overflowY: 'auto',
+                    padding: '24px',
+                    display: 'flex',
+                    flexDirection: 'row',
+                    gap: '24px'
+                }}>
                     {/* Left Column */}
-                    <div className="print-column">
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         {/* Printer/Plotter */}
-                        <div className="print-group">
-                            <span className="print-group-title">Yazıcı/Plotter</span>
-                            <div className="print-field">
-                                <label>İsim</label>
+                        <div>
+                            <h4 style={sectionTitleStyle}>Printer/Plotter</h4>
+                            <div style={{ marginBottom: '12px' }}>
+                                <label style={labelStyle}>Name</label>
                                 <select
                                     value={settings.printer}
                                     onChange={e => setSettings({ ...settings, printer: e.target.value })}
+                                    style={inputStyle}
                                 >
                                     <option value="Adobe PDF">Adobe PDF</option>
                                     <option value="Microsoft Print to PDF">Microsoft Print to PDF</option>
-                                    <option value="Web Print">Web Tarayıcı Yazdırma</option>
+                                    <option value="Web Print">Web Browser Print</option>
                                 </select>
                             </div>
                         </div>
 
                         {/* Paper Size */}
-                        <div className="print-group">
-                            <span className="print-group-title">Kağıt Boyutu</span>
-                            <div className="print-field">
+                        <div>
+                            <h4 style={sectionTitleStyle}>Paper Size</h4>
+                            <div style={{ marginBottom: '12px' }}>
                                 <select
                                     value={settings.paperSize}
                                     onChange={e => setSettings({ ...settings, paperSize: e.target.value })}
+                                    style={inputStyle}
                                 >
                                     <option value="iso_a4">ISO A4 (210 x 297 mm)</option>
                                     <option value="iso_a3">ISO A3 (297 x 420 mm)</option>
@@ -207,30 +323,49 @@ const PrintDialog = () => {
                         </div>
 
                         {/* Plot Area */}
-                        <div className="print-group">
-                            <span className="print-group-title">Çizim Alanı</span>
-                            <div className="print-field">
-                                <label>Ne yazdırılsın:</label>
+                        <div>
+                            <h4 style={sectionTitleStyle}>Plot Area</h4>
+                            <div style={{ marginBottom: '12px' }}>
+                                <label style={labelStyle}>What to plot:</label>
                                 <select
                                     value={settings.plotArea}
                                     onChange={e => setSettings({ ...settings, plotArea: e.target.value as any })}
+                                    style={inputStyle}
                                 >
-                                    <option value="display">Ekran</option>
-                                    <option value="extents">Sınırlar</option>
-                                    <option value="window">Pencere</option>
+                                    <option value="display">Display</option>
+                                    <option value="extents">Extents</option>
+                                    <option value="window">Window</option>
                                 </select>
                             </div>
 
                             {settings.plotArea === 'window' && (
-                                <div className="print-field">
-                                    <button type="button" className="print-window-btn" onClick={handleWindowSelection}>
+                                <div style={{ marginTop: '12px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px' }}>
+                                    <button
+                                        type="button"
+                                        onClick={handleWindowSelection}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '8px 12px',
+                                            backgroundColor: 'rgba(76, 194, 255, 0.15)',
+                                            color: colors.accent,
+                                            border: `1px solid ${colors.accent}`,
+                                            borderRadius: '4px',
+                                            cursor: 'pointer',
+                                            fontSize: '11px',
+                                            fontFamily: 'inherit',
+                                            width: '100%',
+                                            justifyContent: 'center'
+                                        }}
+                                    >
                                         <span className="material-icons" style={{ fontSize: '16px' }}>crop_free</span>
-                                        Pencere Seç
+                                        Select Window
                                     </button>
                                     {printWindowBox ? (
-                                        <div className="print-window-info">Pencere Seçildi ✓</div>
+                                        <div style={{ marginTop: '8px', fontSize: '11px', color: colors.success, textAlign: 'center' }}>Window Selected ✓</div>
                                     ) : (
-                                        <div className="print-window-info" style={{ color: '#ff6b6b' }}>Pencere Seçilmedi</div>
+                                        <div style={{ marginTop: '8px', fontSize: '11px', color: colors.error, textAlign: 'center' }}>No Window Selected</div>
                                     )}
                                 </div>
                             )}
@@ -238,39 +373,44 @@ const PrintDialog = () => {
                     </div>
 
                     {/* Right Column */}
-                    <div className="print-column">
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
                         {/* Plot Style Table */}
-                        <div className="print-group">
-                            <span className="print-group-title">Çizim Stili</span>
-                            <div className="print-field">
+                        <div>
+                            <h4 style={sectionTitleStyle}>Plot Style</h4>
+                            <div style={{ marginBottom: '12px' }}>
                                 <select
                                     value={settings.plotStyle}
                                     onChange={e => setSettings({ ...settings, plotStyle: e.target.value as any })}
+                                    style={inputStyle}
                                 >
-                                    <option value="none">Hiçbiri (Renkli)</option>
-                                    <option value="monochrome">Siyah/Beyaz</option>
-                                    <option value="grayscale">Gri Tonlama</option>
+                                    <option value="none">None (Color)</option>
+                                    <option value="monochrome">Monochrome</option>
+                                    <option value="grayscale">Grayscale</option>
                                 </select>
                             </div>
                         </div>
 
                         {/* Plot Scale */}
-                        <div className="print-group">
-                            <span className="print-group-title">Ölçek</span>
-                            <div className="print-field-row">
-                                <input
-                                    type="checkbox"
-                                    checked={settings.fitToPaper}
-                                    onChange={e => setSettings({ ...settings, fitToPaper: e.target.checked })}
-                                />
-                                <label>Kağıda Sığdır</label>
+                        <div>
+                            <h4 style={sectionTitleStyle}>Plot Scale</h4>
+                            <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', cursor: 'pointer', color: colors.textMain }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={settings.fitToPaper}
+                                        onChange={e => setSettings({ ...settings, fitToPaper: e.target.checked })}
+                                        style={{ marginRight: '8px' }}
+                                    />
+                                    Fit to paper
+                                </label>
                             </div>
                             {!settings.fitToPaper && (
-                                <div className="print-field">
-                                    <label>Ölçek</label>
+                                <div style={{ marginBottom: '12px' }}>
+                                    <label style={labelStyle}>Scale</label>
                                     <select
                                         value={settings.scale}
                                         onChange={e => setSettings({ ...settings, scale: e.target.value })}
+                                        style={inputStyle}
                                     >
                                         <option value="1:1">1:1</option>
                                         <option value="1:2">1:2</option>
@@ -283,52 +423,117 @@ const PrintDialog = () => {
                         </div>
 
                         {/* Plot Options */}
-                        <div className="print-group">
-                            <span className="print-group-title">Seçenekler</span>
-                            <div className="print-field-row">
-                                <input
-                                    type="checkbox"
-                                    checked={settings.centerPlot}
-                                    onChange={e => setSettings({ ...settings, centerPlot: e.target.checked })}
-                                />
-                                <label>Çizimi Ortala</label>
+                        <div>
+                            <h4 style={sectionTitleStyle}>Plot Options</h4>
+                            <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', cursor: 'pointer', color: colors.textMain }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={settings.centerPlot}
+                                        onChange={e => setSettings({ ...settings, centerPlot: e.target.checked })}
+                                        style={{ marginRight: '8px' }}
+                                    />
+                                    Center the plot
+                                </label>
                             </div>
                         </div>
 
                         {/* Orientation */}
-                        <div className="print-group">
-                            <span className="print-group-title">Kağıt Yönü</span>
-                            <div className="print-field-row">
-                                <input
-                                    type="radio"
-                                    name="orientation"
-                                    checked={settings.orientation === 'portrait'}
-                                    onChange={() => setSettings({ ...settings, orientation: 'portrait' })}
-                                />
-                                <label>Dikey (Portrait)</label>
-                            </div>
-                            <div className="print-field-row">
-                                <input
-                                    type="radio"
-                                    name="orientation"
-                                    checked={settings.orientation === 'landscape'}
-                                    onChange={() => setSettings({ ...settings, orientation: 'landscape' })}
-                                />
-                                <label>Yatay (Landscape)</label>
+                        <div>
+                            <h4 style={sectionTitleStyle}>Drawing Orientation</h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', cursor: 'pointer', color: colors.textMain }}>
+                                    <input
+                                        type="radio"
+                                        name="orientation"
+                                        checked={settings.orientation === 'portrait'}
+                                        onChange={() => setSettings({ ...settings, orientation: 'portrait' })}
+                                        style={{ marginRight: '8px' }}
+                                    />
+                                    Portrait
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', cursor: 'pointer', color: colors.textMain }}>
+                                    <input
+                                        type="radio"
+                                        name="orientation"
+                                        checked={settings.orientation === 'landscape'}
+                                        onChange={() => setSettings({ ...settings, orientation: 'landscape' })}
+                                        style={{ marginRight: '8px' }}
+                                    />
+                                    Landscape
+                                </label>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div className="print-dialog-footer">
-                    <button type="button" className="print-btn print-btn-secondary" onClick={handleClose}>İptal</button>
-                    <button type="button" className="print-btn print-btn-secondary" onClick={handlePreview}>Önizleme...</button>
-                    <button type="button" className="print-btn print-btn-primary" onClick={handlePrint}>Yazdır</button>
+                {/* Footer */}
+                <div style={{
+                    padding: '16px',
+                    borderTop: `1px solid ${colors.border}`,
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: '12px',
+                    background: 'rgba(0,0,0,0.2)'
+                }}>
+                    <button
+                        type="button"
+                        onClick={handleClose}
+                        style={{
+                            padding: '8px 16px',
+                            backgroundColor: 'transparent',
+                            color: colors.textMain,
+                            border: `1px solid ${colors.border}`,
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontFamily: 'inherit',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        CANCEL
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handlePreview}
+                        style={{
+                            padding: '8px 16px',
+                            backgroundColor: 'rgba(255,255,255,0.05)',
+                            color: colors.textMain,
+                            border: `1px solid ${colors.border}`,
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontFamily: 'inherit',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        PREVIEW
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handlePrint}
+                        style={{
+                            padding: '8px 24px',
+                            backgroundColor: colors.accent,
+                            color: '#000',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontFamily: 'inherit',
+                            fontWeight: '700',
+                            transition: 'all 0.2s',
+                            boxShadow: '0 2px 8px rgba(76, 194, 255, 0.2)'
+                        }}
+                    >
+                        PLOT
+                    </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
 export default PrintDialog;
-

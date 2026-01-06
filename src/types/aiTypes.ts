@@ -55,12 +55,13 @@ export interface AIGenerationResult {
 
 // Ajan tipleri
 export type AgentType =
-    | 'requestAnalyzer'    // İstek Analizi
-    | 'designStrategy'     // Tasarım Stratejisi
-    | 'engineeringDetail'  // Mühendislik Detayı
-    | 'cadFeaturePlanner'  // CAD Özellik Planlama
-    | 'cadDrawing'         // CAD Çizim (JSON üretici)
-    | 'jsonValidator';     // JSON Doğrulayıcı
+    | 'requestAnalyzer'    // İstek Analizi (Intent)
+    | 'structureAgent'     // Yapı Analizi (Structure) - ESKİ ADI: designStrategy
+    | 'engineeringDetail'  // Mühendislik Detayı (Specler)
+    | 'geometryGenerator'  // Geometri Hesaplayıcı (Geometry)
+    | 'cadFeaturePlanner'  // CAD Özellik Eşleştirici (Feature Mapping)
+    | 'compilerAgent'      // CAD Derleyici (Compiler) - ESKİ ADI: cadDrawing
+    | 'validationAgent';   // Doğrulama (Validation) - ESKİ ADI: jsonValidator
 
 // Ajan konfigürasyonu
 export interface AgentConfig {
@@ -73,11 +74,12 @@ export interface AgentConfig {
 // Tüm ajanların konfigürasyonu
 export interface AgentsConfiguration {
     requestAnalyzer: AgentConfig;
-    designStrategy: AgentConfig;
+    structureAgent: AgentConfig;
     engineeringDetail: AgentConfig;
+    geometryGenerator: AgentConfig;
     cadFeaturePlanner: AgentConfig;
-    cadDrawing: AgentConfig;
-    jsonValidator: AgentConfig;
+    compilerAgent: AgentConfig;
+    validationAgent: AgentConfig;
 }
 
 // Ajan çalışma sonucu
@@ -87,6 +89,8 @@ export interface AgentResult {
     output: string;
     error?: string;
     duration?: number;
+    systemPrompt?: string;
+    userPrompt?: string;
 }
 
 // Orkestrasyon sonucu
@@ -101,50 +105,57 @@ export interface OrchestrationResult {
 // Varsayılan ücretsiz model tanımları
 // Varsayılan ücretsiz model tanımları
 export const DEFAULT_FREE_MODELS: Record<AgentType, string> = {
-    requestAnalyzer: 'google/gemini-2.0-flash-exp:free', // 1M Context
-    designStrategy: 'google/gemini-2.0-flash-exp:free', // 1M Context
-    engineeringDetail: 'google/gemini-2.0-flash-exp:free', // 1M Context
-    cadFeaturePlanner: 'google/gemini-2.0-flash-exp:free', // 1M Context
-    cadDrawing: 'google/gemini-2.0-flash-exp:free', // 1M Context (Tüm geçmişi tutar)
-    jsonValidator: 'meta-llama/llama-3.3-70b-instruct:free' // Strong validation
+    requestAnalyzer: 'google/gemini-2.0-flash-exp:free',
+    structureAgent: 'google/gemini-2.0-flash-exp:free', // Structure decomposition
+    engineeringDetail: 'google/gemini-2.0-flash-exp:free',
+    geometryGenerator: 'google/gemini-2.0-flash-exp:free',
+    cadFeaturePlanner: 'google/gemini-2.0-flash-exp:free',
+    compilerAgent: 'google/gemini-2.0-flash-exp:free', // Strict JSON generation
+    validationAgent: 'meta-llama/llama-3.3-70b-instruct:free' // Deep logic check
 };
 
 // Varsayılan ajan konfigürasyonları
 export const DEFAULT_AGENT_CONFIGS: AgentsConfiguration = {
     requestAnalyzer: {
         model: DEFAULT_FREE_MODELS.requestAnalyzer,
-        temperature: 0.3,
+        temperature: 0.1, // Daha deterministik
         maxTokens: 700,
         enabled: true
     },
-    designStrategy: {
-        model: DEFAULT_FREE_MODELS.designStrategy,
-        temperature: 0.35,
-        maxTokens: 700,
+    structureAgent: {
+        model: DEFAULT_FREE_MODELS.structureAgent,
+        temperature: 0.2,
+        maxTokens: 1000,
         enabled: true
     },
     engineeringDetail: {
         model: DEFAULT_FREE_MODELS.engineeringDetail,
-        temperature: 0.15,
+        temperature: 0.1,
         maxTokens: 600,
+        enabled: true
+    },
+    geometryGenerator: {
+        model: DEFAULT_FREE_MODELS.geometryGenerator,
+        temperature: 0.1,
+        maxTokens: 2000, // Koordinatlar uzun olabilir
         enabled: true
     },
     cadFeaturePlanner: {
         model: DEFAULT_FREE_MODELS.cadFeaturePlanner,
-        temperature: 0.2,
+        temperature: 0.1,
+        maxTokens: 1000,
+        enabled: true
+    },
+    compilerAgent: {
+        model: DEFAULT_FREE_MODELS.compilerAgent,
+        temperature: 0, // KESİNLİKLE 0 OLMALI (Strict)
+        maxTokens: 4000,
+        enabled: true
+    },
+    validationAgent: {
+        model: DEFAULT_FREE_MODELS.validationAgent,
+        temperature: 0.1,
         maxTokens: 500,
-        enabled: true
-    },
-    cadDrawing: {
-        model: DEFAULT_FREE_MODELS.cadDrawing,
-        temperature: 0,
-        maxTokens: 1800,
-        enabled: true
-    },
-    jsonValidator: {
-        model: DEFAULT_FREE_MODELS.jsonValidator,
-        temperature: 0,
-        maxTokens: 400,
         enabled: true
     }
 };
@@ -152,33 +163,38 @@ export const DEFAULT_AGENT_CONFIGS: AgentsConfiguration = {
 // Ajan açıklamaları (UI için)
 export const AGENT_DESCRIPTIONS: Record<AgentType, { name: string; description: string; icon: string }> = {
     requestAnalyzer: {
-        name: 'İstek Analizi',
-        description: 'Kullanıcı komutunu analiz eder ve sınıflandırır',
+        name: 'Niyet Analizi (Intent)',
+        description: 'Kullanıcının ne çizmek istediğini anlar',
         icon: 'psychology'
     },
-    designStrategy: {
-        name: 'Tasarım Stratejisi',
-        description: 'Hangi çizimlerin üretileceğini planlar',
-        icon: 'architecture'
+    structureAgent: {
+        name: 'Yapı Analizi (Structure)',
+        description: 'Yapıyı standart bileşenlerine ayırır',
+        icon: 'account_tree'
     },
     engineeringDetail: {
         name: 'Mühendislik Detayı',
-        description: 'Ölçüler ve teknik kararları belirler',
+        description: 'Her bileşen için teknik ölçüleri belirler',
         icon: 'engineering'
     },
+    geometryGenerator: {
+        name: 'Geometri Hesaplayıcı',
+        description: 'Ölçüleri gerçek koordinatlara dönüştürür',
+        icon: 'square_foot'
+    },
     cadFeaturePlanner: {
-        name: 'CAD Özellik Planlama',
-        description: 'Entity ve layer eşleştirmesi yapar',
+        name: 'CAD Eşleştirici',
+        description: 'Geometriyi CAD entitylerine çevirir',
         icon: 'layers'
     },
-    cadDrawing: {
-        name: 'CAD Çizim',
-        description: 'JSON formatında CAD verisi üretir',
-        icon: 'draw'
+    compilerAgent: {
+        name: 'CAD Derleyici (Compiler)',
+        description: 'Final JSON çıktısını üretir (Strict)',
+        icon: 'terminal'
     },
-    jsonValidator: {
-        name: 'JSON Doğrulayıcı',
-        description: 'Çıktının geçerliliğini kontrol eder',
+    validationAgent: {
+        name: 'Mühendislik Kontrolü',
+        description: 'Mantık ve fizik hatalarını denetler',
         icon: 'fact_check'
     }
 };
@@ -213,6 +229,7 @@ export interface AIContextState {
     // History
     agentHistory: AgentHistoryEntry[];
     addToHistory: (entry: AgentHistoryEntry) => void;
+    deleteHistoryEntry: (id: string) => void;
     clearHistory: () => void;
 }
 

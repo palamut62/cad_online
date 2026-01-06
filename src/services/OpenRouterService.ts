@@ -31,6 +31,9 @@ const getRefererUrl = (): string => {
     return 'http://localhost:3000';
 };
 
+// Global Context Definition
+
+
 // Delay fonksiyonu
 const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -750,6 +753,15 @@ JSON DIŞINDA TEK BİR KARAKTER BİLE YAZMA.
 
     // Ajan prompt'ları
     private getAgentPrompt(agent: string): string {
+        const GLOBAL_CONTEXT = {
+            unit: "mm",
+            origin: [0, 0, 0],
+            forceZ: 0,
+            drawingPlane: "XY",
+            clearBeforeDraw: true,
+            drawingStandard: "ISO"
+        };
+
         const prompts: Record<string, string> = {
             requestAnalyzer: `Sen bir CAD istek analiz ajanısın. Kullanıcının Türkçe veya İngilizce komutunu analiz et.
 
@@ -759,6 +771,7 @@ GÖREV: Komutu sınıflandır ve anahtar bilgileri çıkar.
 {
   "commandType": "draw|edit|query|unknown",
   "drawingType": "plan|section|elevation|detail|other",
+  "drawingScope": "single | multi | full_project",
   "mainSubject": "string (ana konu)",
   "dimensions": { "width": null|number, "height": null|number, "depth": null|number },
   "elements": ["string array - istenilen elemanlar"],
@@ -768,89 +781,141 @@ GÖREV: Komutu sınıflandır ve anahtar bilgileri çıkar.
 
 JSON DIŞINDA HİÇBİR ŞEY YAZMA.`,
 
-            designStrategy: `Sen bir CAD tasarım strateji ajanısın. İstek analizini al ve tasarım stratejisi oluştur.
+            structureAgent: `Sen bir YAPI ANALİZ AJANISIN (Structure Agent). 
+GÖREV: Kullanıcının isteğini En Alt Tipe (SubType) kadar analiz et.
+ASLA genel tip verme (Örn: "Retaining Wall" YETMEZ, "cantilever_L" olmalı).
 
-GÖREV: Hangi çizimlerin üretileceğini ve nasıl yerleştirileceğini planla.
+ÖRNEK: "U kanal çiz"
+{
+  "structureType": "u_channel",
+  "subType": "standard_u",
+  "components": ["base_slab", "left_wall", "right_wall"],
+  "relations": ["walls_on_base", "symmetric"]
+}
+
+ÖRNEK: "İstinat duvarı çiz"
+{
+  "structureType": "retaining_wall",
+  "subType": "cantilever_L", 
+  "components": ["foundation_toe", "foundation_heel", "stem", "shear_key"]
+}
 
 ÇIKTI FORMATI (SADECE JSON):
 {
-  "drawings": [
-    {
-      "type": "plan|section|elevation|detail",
-      "position": { "x": number, "y": number },
-      "scale": number,
-      "elements": ["string array"]
+  "structureType": "string",
+  "subType": "string (L_type, T_type, gravity, U_channel, box_culvert)",
+  "components": ["string array - parçaların teknik adları"],
+  "relations": ["string array - parçalar arası ilişkiler"]
+}
+
+JSON DIŞINDA HİÇBİR ŞEY YAZMA.`,
+
+            engineeringDetail: `Sen bir MÜHENDİSLİK DETAY AJANISIN. Yapının TEK KARAR MERKEZİSİN (Single Source of Truth).
+
+GÖREV: Yapı bileşenleri için KESİN VE NİHAİ ölçüleri belirle.
+Oran hesabı yapma, direkt mm cinsinden değer ver.
+
+İPUÇLARI:
+- İstinat Duvarı (L-Tipi):
+  - Foundation Total Width = 0.5-0.7 * Height
+  - Toe Width = 0.3 * Foundation Width
+  - Stem Thickness = H/12 (min 250mm)
+
+ÇIKTI FORMATI (SADECE JSON):
+{
+  "specs": {
+    "component_group": { 
+        "total_width": number, 
+        "height": number,
+        "detail_param": number 
     }
-  ],
-  "layers": ["string array - kullanılacak katmanlar"],
-  "priorities": ["string array - öncelik sırası"]
+  }
+}
+
+ÖRNEK ÇIKTI:
+{
+  "specs": {
+    "foundation": { "width": 2800, "toe_length": 1000, "heel_length": 1800, "thickness": 600 },
+    "stem": { "height": 4000, "thickness_bottom": 400, "thickness_top": 250 }
+  }
 }
 
 JSON DIŞINDA HİÇBİR ŞEY YAZMA.`,
 
-            engineeringDetail: `Sen bir mühendislik detay ajanısın. Tasarım stratejisini al ve teknik detayları belirle.
+            geometryGenerator: `Sen bir GEOMETRİ HESAPLAYICI AJANISIN. YORUM YOK, SADECE MATEMATİK VAR.
+Engineering Detail'den gelen ölçüleri KURAL TABANLI olarak yerleştir.
 
-GÖREV: Ölçüler, malzeme kalınlıkları ve mühendislik varsayımları üret.
+GLOBAL SİSTEM AYARLARI:
+${JSON.stringify(GLOBAL_CONTEXT, null, 2)}
 
-VARSAYILAN DEĞERLER:
-- Duvar: 200-300 mm
-- Kat yüksekliği: 3000 mm
-- Kapı: 900x2100 mm
-- Pencere: 1200-1500 mm
-- Beton kalınlığı: 100-300 mm
-
-ÇIKTI FORMATI (SADECE JSON):
-{
-  "measurements": {
-    "fieldName": { "value": number, "unit": "mm", "source": "user|assumption" }
-  },
-  "materials": {
-    "elementName": "materialType"
-  },
-  "notes": ["string array - teknik notlar"]
-}
-
-JSON DIŞINDA HİÇBİR ŞEY YAZMA.`,
-
-            cadFeaturePlanner: `Sen bir CAD özellik planlama ajanısın. Mühendislik detaylarını al ve CAD entity mapping yap.
-
-GÖREV: Her eleman için hangi CAD entity ve layer kullanılacağını belirle.
-
-ENTITY TİPLERİ: LINE, CIRCLE, ARC, LWPOLYLINE, ELLIPSE, POINT, SPLINE, DONUT, TEXT, MTEXT, DIMENSION, HATCH, TABLE
-
-LAYER STANDARTLARI: Walls, Doors, Windows, Columns, Beams, Concrete, Earth, Dimensions, Text, Hatches
+KURALLAR (Rules):
+1. ORIGIN (0,0) Daima temel sol alt köşesi olsun (veya mantıklı bir referans).
+2. L-Tipi İstinat Şablonu:
+   - Foundation: Rect(0,0) -> (Width, Thickness)
+   - Stem: Foundation üstüne, Toe bitiminden başlar.
+     - Stem X Start = Foundation.Toe_Length
+     - Stem Y Start = Foundation.Thickness
+3. U-Kanal Şablonu:
+   - Base Slab: Merkezde veya (0,0)'da
+   - Walls: Base slab'in iki ucunda, slab üstünde.
 
 ÇIKTI FORMATI (SADECE JSON):
 {
-  "entityPlan": [
+  "geometries": [
     {
-      "element": "string",
-      "entityType": "LINE|CIRCLE|...",
-      "layer": "string",
-      "properties": {}
+      "id": "foundation", // Engineering specs'teki isimle aynı olmalı
+      "shape": "rect|poly",
+      "points": [[0,0,0], [2800,0,0], [2800,600,0], [0,600,0]]
     }
   ]
 }
 
 JSON DIŞINDA HİÇBİR ŞEY YAZMA.`,
 
-            jsonValidator: `Sen bir JSON doğrulama ajanısın. CAD JSON çıktısını kontrol et.
+            cadFeaturePlanner: `Sen bir CAD EŞLEŞTİRİCİSİN. Geometrik şekilleri CAD entitylerine ve katmanlarına ata.
 
-GÖREV: JSON'un geçerli olup olmadığını, desteklenen entity'leri içerip içermediğini kontrol et.
-
-KONTROLLER:
-1. JSON parse edilebilir mi?
-2. "entities" array mevcut mu?
-3. Her entity'de "type" alanı var mı?
-4. Koordinatlar [x,y,z] formatında mı?
+LAYERLAR: CONCRETE, REINFORCEMENT, DIMENSION, TEXT, HATCH
 
 ÇIKTI FORMATI (SADECE JSON):
 {
-  "valid": true|false,
-  "errors": ["string array - hata mesajları"],
-  "warnings": ["string array - uyarılar"],
-  "entityCount": number,
-  "correctedJSON": null | { "entities": [...] }
+  "mapping": [
+    { "geometryId": "base_slab", "entity": "LWPOLYLINE", "layer": "CONCRETE" }
+  ]
+}
+
+JSON DIŞINDA HİÇBİR ŞEY YAZMA.`,
+
+            compilerAgent: `Sen bir CAD DERLEYİCİSİSİN (Compiler). SADECE Translated Output üret.
+
+GLOBAL SİSTEM:
+${JSON.stringify(GLOBAL_CONTEXT, null, 2)}
+
+KURALLAR:
+1. Tüm Z koordinatları 0 olmak ZORUNDADIR. (2D Çizim)
+2. POLYLINE ve RECT gibi alan oluşturan şekiller KAPALI (Closed) olmalıdır. (İlk ve son nokta aynı veya closed flag true)
+3. Layer isimleri büyük harf ve standart olmalı (CONCRETE, DIMENSION).
+
+ÇIKTI FORMATI (SADECE JSON):
+{
+  "entities": [
+    { "type": "LWPOLYLINE", "layer": "CONCRETE", "closed": true, "vertices": [[x,y,0], ...] }
+  ]
+}
+JSON DIŞINDA HİÇBİR ŞEY YAZMA.`,
+
+            validationAgent: `Sen bir MÜHENDİSLİK DOĞRULAMA AJANISIN (Validator). 
+Çizimi analiz et ve mantık hatalarını bul.
+
+KONTROLLER:
+1. Fiziksel imkansızlıklar (örn: negatif kalınlık)
+2. Geometrik kopukluklar (örn: duvar havada duruyor mu?)
+3. Standart dışı durumlar
+
+ÇIKTI FORMATI (SADECE JSON):
+{
+  "valid": true,
+  "warnings": [],
+  "correctedJSON": null
 }
 
 JSON DIŞINDA HİÇBİR ŞEY YAZMA.`
@@ -866,7 +931,7 @@ JSON DIŞINDA HİÇBİR ŞEY YAZMA.`
         model: string,
         temperature: number,
         maxTokens: number
-    ): Promise<{ success: boolean; output: string; error?: string; duration: number }> {
+    ): Promise<{ success: boolean; output: string; error?: string; duration: number; systemPrompt?: string; userPrompt?: string }> {
         const startTime = Date.now();
 
         if (!this.apiKey) {
@@ -901,12 +966,12 @@ JSON DIŞINDA HİÇBİR ŞEY YAZMA.`
             const duration = Date.now() - startTime;
             console.log(`[${agent}] Tamamlandı (${duration}ms)`);
 
-            return { success: true, output: content, duration };
+            return { success: true, output: content, duration, systemPrompt, userPrompt: input };
         } catch (error) {
             const duration = Date.now() - startTime;
             const errorMessage = error instanceof Error ? error.message : 'Bilinmeyen hata';
             console.error(`[${agent}] Hata:`, errorMessage);
-            return { success: false, output: '', error: errorMessage, duration };
+            return { success: false, output: '', error: errorMessage, duration, systemPrompt, userPrompt: input };
         }
     }
 
@@ -927,9 +992,11 @@ JSON DIŞINDA HİÇBİR ŞEY YAZMA.`
         };
 
         // Ajan sonuçlarını sakla (summary için)
+        // Ajan sonuçlarını sakla (summary için)
         let analysisResult = '';
-        let strategyResult = '';
+        let structureResult = '';
         let engineeringResult = '';
+        let geometryResult = '';
         let featurePlanResult = '';
 
         console.log('🚀 Multi-Agent Orkestrasyon Başladı');
@@ -948,25 +1015,25 @@ JSON DIŞINDA HİÇBİR ŞEY YAZMA.`
             if (result.success) analysisResult = truncateOutput(result.output);
         }
 
-        // 2. Design Strategy
-        if (agentsConfig.designStrategy.enabled) {
-            onAgentChange?.('designStrategy');
-            const strategyContext = `KULLANICI İSTEĞİ: ${userPrompt}\n\nANALİZ: ${analysisResult}`;
+        // 2. Structure Agent (Decomposition)
+        if (agentsConfig.structureAgent.enabled) {
+            onAgentChange?.('structureAgent');
+            const context = `KULLANICI: ${userPrompt}\nANALİZ: ${analysisResult}`;
             const result = await this.runAgent(
-                'designStrategy',
-                strategyContext,
-                agentsConfig.designStrategy.model,
-                agentsConfig.designStrategy.temperature,
-                agentsConfig.designStrategy.maxTokens
+                'structureAgent',
+                context,
+                agentsConfig.structureAgent.model,
+                agentsConfig.structureAgent.temperature,
+                agentsConfig.structureAgent.maxTokens
             );
-            agentResults.push({ agent: 'designStrategy', ...result });
-            if (result.success) strategyResult = truncateOutput(result.output);
+            agentResults.push({ agent: 'structureAgent', ...result });
+            if (result.success) structureResult = truncateOutput(result.output);
         }
 
         // 3. Engineering Detail
         if (agentsConfig.engineeringDetail.enabled) {
             onAgentChange?.('engineeringDetail');
-            const engContext = `KULLANICI İSTEĞİ: ${userPrompt}\nSTRATEJİ: ${strategyResult}`;
+            const engContext = `YAPI BİLEŞENLERİ: ${structureResult}`;
             const result = await this.runAgent(
                 'engineeringDetail',
                 engContext,
@@ -978,10 +1045,25 @@ JSON DIŞINDA HİÇBİR ŞEY YAZMA.`
             if (result.success) engineeringResult = truncateOutput(result.output);
         }
 
-        // 4. CAD Feature Planner
+        // 4. Geometry Generator
+        if (agentsConfig.geometryGenerator && agentsConfig.geometryGenerator.enabled) {
+            onAgentChange?.('geometryGenerator');
+            const geoContext = `YAPI: ${structureResult}\nÖLÇÜLER: ${engineeringResult}`;
+            const result = await this.runAgent(
+                'geometryGenerator',
+                geoContext,
+                agentsConfig.geometryGenerator.model,
+                agentsConfig.geometryGenerator.temperature,
+                agentsConfig.geometryGenerator.maxTokens
+            );
+            agentResults.push({ agent: 'geometryGenerator', ...result });
+            if (result.success) geometryResult = truncateOutput(result.output);
+        }
+
+        // 5. CAD Feature Planner
         if (agentsConfig.cadFeaturePlanner.enabled) {
             onAgentChange?.('cadFeaturePlanner');
-            const featureContext = `KULLANICI İSTEĞİ: ${userPrompt}\nMÜHENDİSLİK: ${engineeringResult}`;
+            const featureContext = `GEOMETRİ: ${geometryResult}`;
             const result = await this.runAgent(
                 'cadFeaturePlanner',
                 featureContext,
@@ -993,42 +1075,39 @@ JSON DIŞINDA HİÇBİR ŞEY YAZMA.`
             if (result.success) featurePlanResult = truncateOutput(result.output);
         }
 
-        // 5. CAD Drawing (Ana JSON üretici) - Kompakt context ile
-        onAgentChange?.('cadDrawing');
-        console.log('🎨 CAD Drawing Agent çalışıyor...');
+        // 6. Compiler Agent (Final JSON Generation)
+        onAgentChange?.('compilerAgent');
+        console.log('🎨 Compiler Agent çalışıyor...');
 
-        // CAD Drawing için optimize edilmiş kompakt context (Limitler artırıldı - Gemini 2.0 Flash)
-        const cadContext = `KULLANICI İSTEĞİ: ${userPrompt}
-${analysisResult ? `ANALİZ: ${truncateOutput(analysisResult, 20000)}` : ''}
-${engineeringResult ? `MÜHENDİSLİK: ${truncateOutput(engineeringResult, 20000)}` : ''}
-${featurePlanResult ? `ÖZELLİK PLANI: ${truncateOutput(featurePlanResult, 20000)}` : ''}`;
+        // Compiler context sadece mapping ve geometriyi alır, yoruma kapalıdır.
+        const compilerContext = `DERLE: \nPLAN: ${featurePlanResult}\nGEOMETRİ: ${geometryResult}`;
 
         const drawingResult = await this.generateCompletion(
-            cadContext,
-            agentsConfig.cadDrawing.model
+            compilerContext,
+            agentsConfig.compilerAgent.model
         );
         agentResults.push({
-            agent: 'cadDrawing',
+            agent: 'compilerAgent',
             success: true,
             output: JSON.stringify(drawingResult).substring(0, 5000),
             duration: 0
         });
 
-        // 6. JSON Validator
+        // 7. Validation Agent
         let finalEntities = drawingResult.entities;
         let warnings = drawingResult.warnings || [];
 
-        if (agentsConfig.jsonValidator.enabled) {
-            onAgentChange?.('jsonValidator');
+        if (agentsConfig.validationAgent.enabled) {
+            onAgentChange?.('validationAgent');
             const validatorInput = JSON.stringify({ entities: drawingResult.entities });
             const result = await this.runAgent(
-                'jsonValidator',
+                'validationAgent',
                 validatorInput,
-                agentsConfig.jsonValidator.model,
-                agentsConfig.jsonValidator.temperature,
-                agentsConfig.jsonValidator.maxTokens
+                agentsConfig.validationAgent.model,
+                agentsConfig.validationAgent.temperature,
+                agentsConfig.validationAgent.maxTokens
             );
-            agentResults.push({ agent: 'jsonValidator', ...result });
+            agentResults.push({ agent: 'validationAgent', ...result });
 
             if (result.success) {
                 try {
@@ -1048,7 +1127,6 @@ ${featurePlanResult ? `ÖZELLİK PLANI: ${truncateOutput(featurePlanResult, 2000
         const totalDuration = Date.now() - startTime;
         console.log(`✅ Orkestrasyon tamamlandı (${totalDuration}ms, ${finalEntities.length} entity)`);
 
-        // Orkestrasyon bitti
         onAgentChange?.(null);
 
         return {

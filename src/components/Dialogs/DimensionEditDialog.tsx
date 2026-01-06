@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { DEFAULT_DIMENSION_SETTINGS, type ArrowStyle, type DecimalFormat } from '../../types/dimensionSettings';
 import type { DimensionEntity } from '../../types/entities';
 
@@ -104,402 +105,461 @@ const DimensionEditDialog: React.FC<DimensionEditDialogProps> = ({ isOpen, onClo
         onClose();
     };
 
-    return (
-        <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1000
-        }}>
-            <div style={{
-                backgroundColor: '#2d2d2d',
-                padding: '20px',
-                borderRadius: '8px',
-                width: '500px',
-                maxHeight: '90vh',
-                overflow: 'auto',
-                color: 'white',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
-            }}>
-                <h3 style={{ marginTop: 0, marginBottom: '20px', borderBottom: '1px solid #444', paddingBottom: '10px' }}>
-                    Ölçü Düzenle
-                </h3>
+    const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.target === e.currentTarget) {
+            onClose();
+        }
+    };
 
-                {/* Metin Değeri */}
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>
-                        Metin Değeri (Boş bırakırsanız otomatik hesaplanır):
-                    </label>
-                    <input
-                        type="text"
-                        value={text}
-                        onChange={e => setText(e.target.value)}
-                        placeholder="Örn: 50 veya R25"
+    // Design Tokens
+    const colors = {
+        bg: 'rgba(30, 30, 31, 0.98)',
+        surface: 'rgba(45, 45, 48, 0.5)',
+        border: 'rgba(255, 255, 255, 0.1)',
+        accent: '#4cc2ff',
+        textMain: '#ececec',
+        textDim: '#999999',
+        error: '#ff6b6b',
+        success: '#4cffa6',
+        glass: 'blur(16px)',
+        inputBg: 'rgba(0, 0, 0, 0.3)'
+    };
+
+    const inputStyle = {
+        width: '100%',
+        padding: '6px 8px',
+        backgroundColor: colors.inputBg,
+        color: colors.textMain,
+        border: `1px solid ${colors.border}`,
+        borderRadius: '4px',
+        fontFamily: "'Consolas', 'Monaco', monospace",
+        fontSize: '11px'
+    };
+
+    const labelStyle = {
+        display: 'block',
+        marginBottom: '6px',
+        fontSize: '11px',
+        color: colors.textDim
+    };
+
+    return ReactDOM.createPortal(
+        <div
+            onClick={handleOverlayClick}
+            style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'rgba(0,0,0,0.6)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                zIndex: 1000,
+                backdropFilter: 'blur(5px)'
+            }}
+        >
+            <div
+                style={{
+                    backgroundColor: colors.bg,
+                    borderRadius: '8px',
+                    width: '500px',
+                    maxHeight: '90vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+                    border: `1px solid ${colors.border}`,
+                    fontFamily: "'Consolas', 'Monaco', monospace",
+                    backdropFilter: colors.glass,
+                    overflow: 'hidden'
+                }}
+            >
+                {/* Header */}
+                <div style={{
+                    padding: '12px 16px',
+                    borderBottom: `1px solid ${colors.border}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'rgba(255, 255, 255, 0.03)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="material-icons" style={{ color: colors.accent, fontSize: '18px' }}>edit</span>
+                        <span style={{ fontSize: '12px', fontWeight: '700', letterSpacing: '0.5px', color: colors.textMain }}>EDIT DIMENSION</span>
+                    </div>
+                    <button
+                        onClick={onClose}
                         style={{
-                            width: '100%',
-                            padding: '8px',
-                            backgroundColor: '#444',
-                            color: 'white',
-                            border: '1px solid #555',
-                            borderRadius: '4px'
-                        }}
-                    />
-                </div>
-
-                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-                    <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>
-                            Metin Yüksekliği: {textHeight}
-                        </label>
-                        <input
-                            type="range"
-                            min="1"
-                            max="10"
-                            step="0.5"
-                            value={textHeight}
-                            onChange={e => setTextHeight(parseFloat(e.target.value))}
-                            style={{ width: '100%' }}
-                        />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>
-                            Ok Boyutu: {arrowSize}
-                        </label>
-                        <input
-                            type="range"
-                            min="0.5"
-                            max="10"
-                            step="0.5"
-                            value={arrowSize}
-                            onChange={e => setArrowSize(parseFloat(e.target.value))}
-                            style={{ width: '100%' }}
-                        />
-                    </div>
-                </div>
-
-                {/* Ok Şekli */}
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                        Ok Şekli
-                    </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-                        {ARROW_STYLES.map(style => (
-                            <button
-                                key={style.value}
-                                type="button"
-                                onClick={() => setArrowStyle(style.value)}
-                                style={{
-                                    padding: '10px',
-                                    backgroundColor: arrowStyle === style.value ? '#4cc2ff' : '#444',
-                                    color: arrowStyle === style.value ? 'black' : 'white',
-                                    border: arrowStyle === style.value ? '2px solid #4cc2ff' : '1px solid #555',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer',
-                                    fontSize: '12px'
-                                }}
-                            >
-                                {style.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Ok Yönü */}
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                        Ok Yönü
-                    </label>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                        {[
-                            { value: 'inside' as const, label: 'İçeride' },
-                            { value: 'outside' as const, label: 'Dışarıda' },
-                            { value: 'both' as const, label: 'Her İki Taraf' }
-                        ].map(dir => (
-                            <button
-                                key={dir.value}
-                                type="button"
-                                onClick={() => setArrowDirection(dir.value)}
-                                style={{
-                                    flex: 1,
-                                    padding: '10px',
-                                    backgroundColor: arrowDirection === dir.value ? '#4cc2ff' : '#444',
-                                    color: arrowDirection === dir.value ? 'black' : 'white',
-                                    border: arrowDirection === dir.value ? '2px solid #4cc2ff' : '1px solid #555',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer',
-                                    fontSize: '12px'
-                                }}
-                            >
-                                {dir.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Hassasiyet */}
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                        Ondalık Hassasiyet
-                    </label>
-                    <select
-                        value={precision}
-                        onChange={e => setPrecision(e.target.value as DecimalFormat)}
-                        style={{
-                            width: '100%',
-                            padding: '8px',
-                            backgroundColor: '#444',
-                            color: 'white',
-                            border: '1px solid #555',
-                            borderRadius: '4px'
+                            background: 'none',
+                            border: 'none',
+                            color: colors.textDim,
+                            cursor: 'pointer',
+                            padding: '0',
+                            display: 'flex',
+                            opacity: 0.6
                         }}
                     >
-                        {DECIMAL_FORMATS.map(f => (
-                            <option key={f.value} value={f.value}>
-                                {f.label} ({f.example})
-                            </option>
-                        ))}
-                    </select>
+                        <span className="material-icons" style={{ fontSize: '16px' }}>close</span>
+                    </button>
                 </div>
 
-                {/* Renkler */}
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>
-                        Renkler
-                    </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
-                        <div>
-                            <label style={{ fontSize: '11px', color: '#888' }}>Ok:</label>
-                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                {PRESET_COLORS.map(c => (
-                                    <button
-                                        key={c.value}
-                                        type="button"
-                                        onClick={() => setArrowColor(c.value)}
-                                        style={{
-                                            width: '22px',
-                                            height: '22px',
-                                            backgroundColor: c.value,
-                                            border: arrowColor === c.value ? '2px solid #4cc2ff' : '1px solid #555',
-                                            borderRadius: '3px',
-                                            cursor: 'pointer',
-                                            padding: 0
-                                        }}
-                                    />
-                                ))}
-                                <input
-                                    type="color"
-                                    value={arrowColor}
-                                    onChange={e => setArrowColor(e.target.value)}
-                                    style={{ width: '22px', height: '22px', padding: 0, border: 'none', cursor: 'pointer' }}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label style={{ fontSize: '11px', color: '#888' }}>Metin:</label>
-                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                {PRESET_COLORS.map(c => (
-                                    <button
-                                        key={c.value}
-                                        type="button"
-                                        onClick={() => setTextColor(c.value)}
-                                        style={{
-                                            width: '22px',
-                                            height: '22px',
-                                            backgroundColor: c.value,
-                                            border: textColor === c.value ? '2px solid #4cc2ff' : '1px solid #555',
-                                            borderRadius: '3px',
-                                            cursor: 'pointer',
-                                            padding: 0
-                                        }}
-                                    />
-                                ))}
-                                <input
-                                    type="color"
-                                    value={textColor}
-                                    onChange={e => setTextColor(e.target.value)}
-                                    style={{ width: '22px', height: '22px', padding: 0, border: 'none', cursor: 'pointer' }}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label style={{ fontSize: '11px', color: '#888' }}>Ölçü Çizgisi:</label>
-                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                {PRESET_COLORS.map(c => (
-                                    <button
-                                        key={c.value}
-                                        type="button"
-                                        onClick={() => setDimLineColor(c.value)}
-                                        style={{
-                                            width: '22px',
-                                            height: '22px',
-                                            backgroundColor: c.value,
-                                            border: dimLineColor === c.value ? '2px solid #4cc2ff' : '1px solid #555',
-                                            borderRadius: '3px',
-                                            cursor: 'pointer',
-                                            padding: 0
-                                        }}
-                                    />
-                                ))}
-                                <input
-                                    type="color"
-                                    value={dimLineColor}
-                                    onChange={e => setDimLineColor(e.target.value)}
-                                    style={{ width: '22px', height: '22px', padding: 0, border: 'none', cursor: 'pointer' }}
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label style={{ fontSize: '11px', color: '#888' }}>Uzantı Çizgisi:</label>
-                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                {PRESET_COLORS.map(c => (
-                                    <button
-                                        key={c.value}
-                                        type="button"
-                                        onClick={() => setExtLineColor(c.value)}
-                                        style={{
-                                            width: '22px',
-                                            height: '22px',
-                                            backgroundColor: c.value,
-                                            border: extLineColor === c.value ? '2px solid #4cc2ff' : '1px solid #555',
-                                            borderRadius: '3px',
-                                            cursor: 'pointer',
-                                            padding: 0
-                                        }}
-                                    />
-                                ))}
-                                <input
-                                    type="color"
-                                    value={extLineColor}
-                                    onChange={e => setExtLineColor(e.target.value)}
-                                    style={{ width: '22px', height: '22px', padding: 0, border: 'none', cursor: 'pointer' }}
-                                />
-                            </div>
-                        </div>
+                <div className="custom-scrollbar" style={{
+                    flex: 1,
+                    overflowY: 'auto',
+                    padding: '24px'
+                }}>
+                    {/* Metin Değeri */}
+                    <div style={{ marginBottom: '20px' }}>
+                        <label style={labelStyle}>
+                            Override Text Value (Leave empty for calculated):
+                        </label>
+                        <input
+                            type="text"
+                            value={text}
+                            onChange={e => setText(e.target.value)}
+                            placeholder="e.g. 50 or R25"
+                            style={inputStyle}
+                        />
                     </div>
-                </div>
 
-                {/* Çizgi Kalınlıkları */}
-                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-                    <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>
-                            Ölçü Çizgisi Kalınlığı: {dimLineWeight}
-                        </label>
-                        <input
-                            type="range"
-                            min="0.1"
-                            max="3"
-                            step="0.1"
-                            value={dimLineWeight}
-                            onChange={e => setDimLineWeight(parseFloat(e.target.value))}
-                            style={{ width: '100%' }}
-                        />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                        <div>
+                            <label style={labelStyle}>
+                                Text Height: <span style={{ color: colors.textMain }}>{textHeight}</span>
+                            </label>
+                            <input
+                                type="range"
+                                min="1"
+                                max="10"
+                                step="0.5"
+                                value={textHeight}
+                                onChange={e => setTextHeight(parseFloat(e.target.value))}
+                                style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
+                            />
+                        </div>
+                        <div>
+                            <label style={labelStyle}>
+                                Arrow Size: <span style={{ color: colors.textMain }}>{arrowSize}</span>
+                            </label>
+                            <input
+                                type="range"
+                                min="0.5"
+                                max="10"
+                                step="0.5"
+                                value={arrowSize}
+                                onChange={e => setArrowSize(parseFloat(e.target.value))}
+                                style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
+                            />
+                        </div>
                     </div>
-                    <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>
-                            Uzantı Çizgisi Kalınlığı: {extLineWeight}
-                        </label>
-                        <input
-                            type="range"
-                            min="0.1"
-                            max="3"
-                            step="0.1"
-                            value={extLineWeight}
-                            onChange={e => setExtLineWeight(parseFloat(e.target.value))}
-                            style={{ width: '100%' }}
-                        />
-                    </div>
-                </div>
 
-                {/* Uzantı Çizgisi Ayarları */}
-                <div style={{ display: 'flex', gap: '15px', marginBottom: '15px' }}>
-                    <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>
-                            Uzantı Ofseti: {extensionLineOffset}
-                        </label>
-                        <input
-                            type="range"
-                            min="0"
-                            max="5"
-                            step="0.25"
-                            value={extensionLineOffset}
-                            onChange={e => setExtensionLineOffset(parseFloat(e.target.value))}
-                            style={{ width: '100%' }}
-                        />
+                    {/* Ok Şekli */}
+                    <div style={{ marginBottom: '20px' }}>
+                        <label style={labelStyle}>Arrow Style</label>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                            {ARROW_STYLES.map(style => (
+                                <button
+                                    key={style.value}
+                                    type="button"
+                                    onClick={() => setArrowStyle(style.value)}
+                                    style={{
+                                        padding: '8px',
+                                        backgroundColor: arrowStyle === style.value ? 'rgba(76, 194, 255, 0.15)' : 'rgba(255,255,255,0.03)',
+                                        color: arrowStyle === style.value ? colors.accent : colors.textDim,
+                                        border: `1px solid ${arrowStyle === style.value ? colors.accent : colors.border}`,
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '11px',
+                                        fontFamily: 'inherit',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {style.label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
-                    <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontSize: '13px' }}>
-                            Uzantı Uzaması: {extensionLineExtend}
-                        </label>
-                        <input
-                            type="range"
-                            min="0"
-                            max="5"
-                            step="0.25"
-                            value={extensionLineExtend}
-                            onChange={e => setExtensionLineExtend(parseFloat(e.target.value))}
-                            style={{ width: '100%' }}
-                        />
-                    </div>
-                </div>
 
-                {/* Birim */}
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', fontSize: '13px', marginBottom: '10px' }}>
-                        <input
-                            type="checkbox"
-                            checked={showUnit}
-                            onChange={e => setShowUnit(e.target.checked)}
-                            style={{ marginRight: '8px' }}
-                        />
-                        Birim göster
-                    </label>
-                    {showUnit && (
+                    {/* Ok Yönü */}
+                    <div style={{ marginBottom: '20px' }}>
+                        <label style={labelStyle}>Arrow Direction</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            {[
+                                { value: 'inside' as const, label: 'Inside' },
+                                { value: 'outside' as const, label: 'Outside' },
+                                { value: 'both' as const, label: 'Both' }
+                            ].map(dir => (
+                                <button
+                                    key={dir.value}
+                                    type="button"
+                                    onClick={() => setArrowDirection(dir.value)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '8px',
+                                        backgroundColor: arrowDirection === dir.value ? 'rgba(76, 194, 255, 0.15)' : 'rgba(255,255,255,0.03)',
+                                        color: arrowDirection === dir.value ? colors.accent : colors.textDim,
+                                        border: `1px solid ${arrowDirection === dir.value ? colors.accent : colors.border}`,
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '11px',
+                                        fontFamily: 'inherit',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {dir.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Hassasiyet */}
+                    <div style={{ marginBottom: '20px' }}>
+                        <label style={labelStyle}>Precision</label>
                         <select
-                            value={unit}
-                            onChange={e => setUnit(e.target.value)}
-                            style={{
-                                width: '100%',
-                                padding: '8px',
-                                backgroundColor: '#444',
-                                color: 'white',
-                                border: '1px solid #555',
-                                borderRadius: '4px'
-                            }}
+                            value={precision}
+                            onChange={e => setPrecision(e.target.value as DecimalFormat)}
+                            style={inputStyle}
                         >
-                            <option value="mm">mm</option>
-                            <option value="cm">cm</option>
-                            <option value="m">m</option>
-                            <option value="inch">inch</option>
-                            <option value="feet">feet</option>
+                            {DECIMAL_FORMATS.map(f => (
+                                <option key={f.value} value={f.value}>
+                                    {f.label} ({f.example})
+                                </option>
+                            ))}
                         </select>
-                    )}
+                    </div>
+
+                    {/* Renkler */}
+                    <div style={{ marginBottom: '20px' }}>
+                        <label style={labelStyle}>Colors</label>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                            <div>
+                                <label style={{ fontSize: '10px', color: colors.textDim, marginBottom: '4px', display: 'block' }}>Arrow:</label>
+                                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                    {PRESET_COLORS.map(c => (
+                                        <button
+                                            key={c.value}
+                                            type="button"
+                                            onClick={() => setArrowColor(c.value)}
+                                            style={{
+                                                width: '20px',
+                                                height: '20px',
+                                                backgroundColor: c.value,
+                                                border: arrowColor === c.value ? `2px solid ${colors.accent}` : `1px solid ${colors.border}`,
+                                                borderRadius: '3px',
+                                                cursor: 'pointer',
+                                                padding: 0
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '10px', color: colors.textDim, marginBottom: '4px', display: 'block' }}>Text:</label>
+                                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                    {PRESET_COLORS.map(c => (
+                                        <button
+                                            key={c.value}
+                                            type="button"
+                                            onClick={() => setTextColor(c.value)}
+                                            style={{
+                                                width: '20px',
+                                                height: '20px',
+                                                backgroundColor: c.value,
+                                                border: textColor === c.value ? `2px solid ${colors.accent}` : `1px solid ${colors.border}`,
+                                                borderRadius: '3px',
+                                                cursor: 'pointer',
+                                                padding: 0
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '10px', color: colors.textDim, marginBottom: '4px', display: 'block' }}>Dim Line:</label>
+                                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                    {PRESET_COLORS.map(c => (
+                                        <button
+                                            key={c.value}
+                                            type="button"
+                                            onClick={() => setDimLineColor(c.value)}
+                                            style={{
+                                                width: '20px',
+                                                height: '20px',
+                                                backgroundColor: c.value,
+                                                border: dimLineColor === c.value ? `2px solid ${colors.accent}` : `1px solid ${colors.border}`,
+                                                borderRadius: '3px',
+                                                cursor: 'pointer',
+                                                padding: 0
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label style={{ fontSize: '10px', color: colors.textDim, marginBottom: '4px', display: 'block' }}>Ext Line:</label>
+                                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                    {PRESET_COLORS.map(c => (
+                                        <button
+                                            key={c.value}
+                                            type="button"
+                                            onClick={() => setExtLineColor(c.value)}
+                                            style={{
+                                                width: '20px',
+                                                height: '20px',
+                                                backgroundColor: c.value,
+                                                border: extLineColor === c.value ? `2px solid ${colors.accent}` : `1px solid ${colors.border}`,
+                                                borderRadius: '3px',
+                                                cursor: 'pointer',
+                                                padding: 0
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Çizgi Kalınlıkları */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                        <div>
+                            <label style={labelStyle}>
+                                Dim Line Weight: <span style={{ color: colors.textMain }}>{dimLineWeight}</span>
+                            </label>
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="3"
+                                step="0.1"
+                                value={dimLineWeight}
+                                onChange={e => setDimLineWeight(parseFloat(e.target.value))}
+                                style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
+                            />
+                        </div>
+                        <div>
+                            <label style={labelStyle}>
+                                Ext Line Weight: <span style={{ color: colors.textMain }}>{extLineWeight}</span>
+                            </label>
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="3"
+                                step="0.1"
+                                value={extLineWeight}
+                                onChange={e => setExtLineWeight(parseFloat(e.target.value))}
+                                style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Uzantı Çizgisi Ayarları */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                        <div>
+                            <label style={labelStyle}>
+                                Ext Offset: <span style={{ color: colors.textMain }}>{extensionLineOffset}</span>
+                            </label>
+                            <input
+                                type="range"
+                                min="0"
+                                max="5"
+                                step="0.25"
+                                value={extensionLineOffset}
+                                onChange={e => setExtensionLineOffset(parseFloat(e.target.value))}
+                                style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
+                            />
+                        </div>
+                        <div>
+                            <label style={labelStyle}>
+                                Ext Extend: <span style={{ color: colors.textMain }}>{extensionLineExtend}</span>
+                            </label>
+                            <input
+                                type="range"
+                                min="0"
+                                max="5"
+                                step="0.25"
+                                value={extensionLineExtend}
+                                onChange={e => setExtensionLineExtend(parseFloat(e.target.value))}
+                                style={{ width: '100%', accentColor: colors.accent, height: '4px' }}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Birim */}
+                    <div style={{ marginBottom: '15px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', marginBottom: '10px', cursor: 'pointer', color: colors.textMain }}>
+                            <input
+                                type="checkbox"
+                                checked={showUnit}
+                                onChange={e => setShowUnit(e.target.checked)}
+                                style={{ marginRight: '8px' }}
+                            />
+                            Show Unit
+                        </label>
+                        {showUnit && (
+                            <select
+                                value={unit}
+                                onChange={e => setUnit(e.target.value)}
+                                style={inputStyle}
+                            >
+                                <option value="mm">mm</option>
+                                <option value="cm">cm</option>
+                                <option value="m">m</option>
+                                <option value="inch">inch</option>
+                                <option value="feet">feet</option>
+                            </select>
+                        )}
+                    </div>
                 </div>
 
-                {/* Buttons */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                {/* Footer */}
+                <div style={{
+                    padding: '16px',
+                    borderTop: `1px solid ${colors.border}`,
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: '12px',
+                    background: 'rgba(0,0,0,0.2)'
+                }}>
                     <button
                         type="button"
                         onClick={onClose}
-                        style={{ padding: '8px 16px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                        style={{
+                            padding: '8px 16px',
+                            backgroundColor: 'transparent',
+                            color: colors.textMain,
+                            border: `1px solid ${colors.border}`,
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontFamily: 'inherit',
+                            transition: 'all 0.2s'
+                        }}
                     >
-                        İptal
+                        CANCEL
                     </button>
                     <button
                         type="button"
                         onClick={handleSave}
-                        style={{ padding: '8px 16px', backgroundColor: '#4cc2ff', color: 'black', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+                        style={{
+                            padding: '8px 24px',
+                            backgroundColor: colors.accent,
+                            color: '#000',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontFamily: 'inherit',
+                            fontWeight: '700',
+                            transition: 'all 0.2s',
+                            boxShadow: '0 2px 8px rgba(76, 194, 255, 0.2)'
+                        }}
                     >
-                        Kaydet
+                        SAVE
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

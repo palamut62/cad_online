@@ -246,6 +246,32 @@ interface DrawingContextValue {
     entityId?: number;
   }>>;
 
+  // InPlaceTextEditor State
+  inPlaceTextEditorState: {
+    isOpen: boolean;
+    entityId?: number;
+    initialText?: string;
+    position?: Point;
+    width?: number;
+    rotation?: number;
+    style?: any;
+    onSubmit?: (text: string) => void;
+    onCancel?: () => void;
+  };
+  setInPlaceTextEditorState: React.Dispatch<React.SetStateAction<{
+    isOpen: boolean;
+    entityId?: number;
+    initialText?: string;
+    position?: Point;
+    width?: number;
+    rotation?: number;
+    style?: any;
+    onSubmit?: (text: string) => void;
+    onCancel?: () => void;
+  }>>;
+  submitInPlaceEdit: (text: string) => void;
+  cancelInPlaceEdit: () => void;
+
   // Print System State
   printDialogState: { isOpen: boolean };
   setPrintDialogState: React.Dispatch<React.SetStateAction<{ isOpen: boolean }>>;
@@ -374,6 +400,33 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     isOpen: boolean;
     entityId?: number;
   }>({ isOpen: false });
+
+  // InPlaceTextEditor State
+  const [inPlaceTextEditorState, setInPlaceTextEditorState] = useState<{
+    isOpen: boolean;
+    entityId?: number;
+    initialText?: string;
+    position?: Point;
+    width?: number;
+    rotation?: number;
+    style?: any;
+    onSubmit?: (text: string) => void;
+    onCancel?: () => void;
+  }>({ isOpen: false });
+
+  const submitInPlaceEdit = useCallback((text: string) => {
+    if (inPlaceTextEditorState.onSubmit) {
+      inPlaceTextEditorState.onSubmit(text);
+    }
+    setInPlaceTextEditorState(prev => ({ ...prev, isOpen: false }));
+  }, [inPlaceTextEditorState]);
+
+  const cancelInPlaceEdit = useCallback(() => {
+    if (inPlaceTextEditorState.onCancel) {
+      inPlaceTextEditorState.onCancel();
+    }
+    setInPlaceTextEditorState(prev => ({ ...prev, isOpen: false }));
+  }, [inPlaceTextEditorState]);
 
   // Print System State
   const [printDialogState, setPrintDialogState] = useState<{
@@ -5188,6 +5241,11 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     setDimensionSettingsDialogState,
     dimensionEditDialogState,
     setDimensionEditDialogState,
+    // InPlaceTextEditor State
+    inPlaceTextEditorState,
+    setInPlaceTextEditorState,
+    submitInPlaceEdit,
+    cancelInPlaceEdit,
     // Print System
     printDialogState,
     setPrintDialogState,
@@ -5228,6 +5286,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     tableDialogState, setTableDialogState,
     dimensionSettingsDialogState, setDimensionSettingsDialogState,
     dimensionEditDialogState, setDimensionEditDialogState,
+    inPlaceTextEditorState, setInPlaceTextEditorState, submitInPlaceEdit, cancelInPlaceEdit,
     printDialogState, setPrintDialogState,
     printWindowMode, startPrintWindow, finishPrintWindow, printWindowBox, setPrintWindowBox, applyPrintWindow,
     printPreviewMode, startPrintPreview, finishPrintPreview

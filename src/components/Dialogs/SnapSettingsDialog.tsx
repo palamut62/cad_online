@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import type { SnapMode } from '../../types/snap';
 import { DEFAULT_SNAP_SETTINGS } from '../../types/snap';
 
@@ -17,15 +18,15 @@ interface LocalSnapSettings {
 
 const SNAP_MODES: { mode: SnapMode; label: string; icon: string }[] = [
     { mode: 'ENDPOINT', label: 'Endpoint', icon: '■' },
-    { mode: 'MIDPOINT', label: 'Midpoint', icon: '▬' },
+    { mode: 'MIDPOINT', label: 'Midpoint', icon: '▲' }, // Changed to standard triangle
     { mode: 'CENTER', label: 'Center', icon: '⊕' },
     { mode: 'NODE', label: 'Node', icon: '●' },
-    { mode: 'QUADRANT', label: 'Quadrant', icon: '✚' },
-    { mode: 'INTERSECTION', label: 'Intersection', icon: '✳' },
-    { mode: 'INSERTION', label: 'Insertion', icon: '➤' },
-    { mode: 'PERPENDICULAR', label: 'Perpendicular', icon: '⟂' },
-    { mode: 'TANGENT', label: 'Tangent', icon: '◠' },
-    { mode: 'NEAREST', label: 'Nearest', icon: '●' },
+    { mode: 'QUADRANT', label: 'Quadrant', icon: '◆' }, // Diamond
+    { mode: 'INTERSECTION', label: 'Intersection', icon: '✕' },
+    { mode: 'INSERTION', label: 'Insertion', icon: 'INS' },
+    { mode: 'PERPENDICULAR', label: 'Perpendicular', icon: '⊥' },
+    { mode: 'TANGENT', label: 'Tangent', icon: '○' },
+    { mode: 'NEAREST', label: 'Nearest', icon: '⧖' },
     { mode: 'PARALLEL', label: 'Parallel', icon: '//' },
 ];
 
@@ -59,8 +60,7 @@ const SnapSettingsDialog: React.FC<SnapDialogProps> = ({ isOpen, onClose }) => {
     };
 
     const handleApply = () => {
-        // DrawingContext'e ayarları kaydet
-        // (Bu işlev DrawingContext'te implement edilmeli)
+        // DrawingContext'e ayarları kaydet logic'i buraya gelecek
         console.log('Applying snap settings:', localSettings);
         onClose();
     };
@@ -70,145 +70,245 @@ const SnapSettingsDialog: React.FC<SnapDialogProps> = ({ isOpen, onClose }) => {
         onClose();
     };
 
-    return (
-        <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1000
-        }}>
-            <div style={{
-                backgroundColor: '#2d2d2d',
-                padding: '20px',
-                borderRadius: '8px',
-                width: '380px',
-                color: 'white',
-                boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
-            }}>
-                <h3 style={{ marginTop: 0, marginBottom: '15px', borderBottom: '1px solid #444', paddingBottom: '10px' }}>
-                    Object Snap Settings
-                </h3>
+    const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.target === e.currentTarget) {
+            onClose();
+        }
+    };
 
-                {/* Snap Modes Grid */}
+    // Design Tokens
+    const colors = {
+        bg: 'rgba(30, 30, 31, 0.98)',
+        surface: 'rgba(45, 45, 48, 0.5)',
+        border: 'rgba(255, 255, 255, 0.1)',
+        accent: '#4cc2ff',
+        textMain: '#ececec',
+        textDim: '#999999',
+        error: '#ff6b6b',
+        success: '#4cffa6',
+        glass: 'blur(16px)'
+    };
+
+    return ReactDOM.createPortal(
+        <div
+            onClick={handleOverlayClick}
+            style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                backgroundColor: 'rgba(0,0,0,0.6)',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                zIndex: 2000,
+                backdropFilter: 'blur(5px)'
+            }}
+        >
+            <div
+                style={{
+                    backgroundColor: colors.bg,
+                    padding: '0',
+                    borderRadius: '8px',
+                    width: '400px',
+                    color: colors.textMain,
+                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+                    border: `1px solid ${colors.border}`,
+                    fontFamily: "'Consolas', 'Monaco', monospace",
+                    backdropFilter: colors.glass,
+                    overflow: 'hidden'
+                }}
+            >
+                {/* Header */}
                 <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 1fr)',
-                    gap: '8px',
-                    marginBottom: '15px'
+                    padding: '12px 16px',
+                    borderBottom: `1px solid ${colors.border}`,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: 'rgba(255, 255, 255, 0.03)'
                 }}>
-                    {SNAP_MODES.map(({ mode, label, icon }) => (
-                        <button
-                            key={mode}
-                            type="button"
-                            onClick={() => toggleMode(mode)}
-                            style={{
-                                padding: '12px 8px',
-                                backgroundColor: localSettings.modes.includes(mode) ? '#4cc2ff' : '#444',
-                                color: localSettings.modes.includes(mode) ? 'black' : 'white',
-                                border: localSettings.modes.includes(mode) ? '2px solid #4cc2ff' : '1px solid #555',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '11px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                gap: '4px'
-                            }}
-                        >
-                            <span style={{ fontSize: '16px' }}>{icon}</span>
-                            <span>{label}</span>
-                        </button>
-                    ))}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="material-icons" style={{ color: colors.accent, fontSize: '18px' }}>gps_fixed</span>
+                        <span style={{ fontSize: '12px', fontWeight: '700', letterSpacing: '0.5px' }}>OBJECT SNAP SETTINGS</span>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            color: colors.textDim,
+                            cursor: 'pointer',
+                            padding: '0',
+                            display: 'flex',
+                            opacity: 0.6
+                        }}
+                    >
+                        <span className="material-icons" style={{ fontSize: '16px' }}>close</span>
+                    </button>
                 </div>
 
-                {/* Settings */}
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', fontSize: '13px', marginBottom: '8px' }}>
+                {/* Content */}
+                <div style={{ padding: '16px' }}>
+
+                    {/* Main Toggle */}
+                    <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        marginBottom: '16px',
+                        cursor: 'pointer',
+                        padding: '8px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: '4px',
+                        border: `1px solid ${localSettings.enabled ? colors.accent : 'transparent'}`
+                    }}>
                         <input
                             type="checkbox"
                             checked={localSettings.enabled}
                             onChange={(e) => setLocalSettings({ ...localSettings, enabled: e.target.checked })}
                             style={{ marginRight: '8px' }}
                         />
-                        Object Snap On
+                        OBJECT SNAP ON (F3)
                     </label>
 
-                    <div style={{ display: 'flex', gap: '15px', marginBottom: '8px' }}>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '4px' }}>
-                                Aperture Size: {localSettings.apertureSize}
-                            </label>
-                            <input
-                                type="range"
-                                min="3"
-                                max="20"
-                                value={localSettings.apertureSize}
-                                onChange={(e) => setLocalSettings({ ...localSettings, apertureSize: parseFloat(e.target.value) })}
-                                style={{ width: '100%' }}
-                            />
+                    {/* Snap Modes Grid */}
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(2, 1fr)',
+                        gap: '6px',
+                        marginBottom: '20px',
+                        opacity: localSettings.enabled ? 1 : 0.5,
+                        pointerEvents: localSettings.enabled ? 'auto' : 'none'
+                    }}>
+                        {SNAP_MODES.map(({ mode, label, icon }) => (
+                            <button
+                                key={mode}
+                                type="button"
+                                onClick={() => toggleMode(mode)}
+                                style={{
+                                    padding: '8px',
+                                    backgroundColor: localSettings.modes.includes(mode) ? 'rgba(76, 194, 255, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                                    color: localSettings.modes.includes(mode) ? colors.accent : colors.textDim,
+                                    border: `1px solid ${localSettings.modes.includes(mode) ? colors.accent : colors.border}`,
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '11px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'flex-start',
+                                    gap: '8px',
+                                    transition: 'all 0.2s ease',
+                                    textAlign: 'left'
+                                }}
+                            >
+                                <span style={{ fontSize: '14px', width: '20px', textAlign: 'center' }}>{icon}</span>
+                                <span style={{ fontFamily: 'Consolas, monospace', fontWeight: localSettings.modes.includes(mode) ? '700' : '400' }}>
+                                    {label}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Advanced Settings */}
+                    <div style={{
+                        padding: '12px',
+                        background: 'rgba(0,0,0,0.2)',
+                        borderRadius: '4px',
+                        marginBottom: '16px'
+                    }}>
+                        <div style={{ fontSize: '10px', color: colors.accent, fontWeight: '700', marginBottom: '8px' }}>ADVANCED CONFIG</div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                    <label style={{ fontSize: '10px', color: colors.textDim }}>Aperture Size</label>
+                                    <span style={{ fontSize: '10px', color: colors.textMain }}>{localSettings.apertureSize}px</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="3"
+                                    max="20"
+                                    value={localSettings.apertureSize}
+                                    onChange={(e) => setLocalSettings({ ...localSettings, apertureSize: parseFloat(e.target.value) })}
+                                    style={{ width: '100%', height: '4px', accentColor: colors.accent }}
+                                />
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'flex', alignItems: 'center', fontSize: '11px', marginBottom: '4px', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={localSettings.magnetEnabled}
+                                        onChange={(e) => setLocalSettings({ ...localSettings, magnetEnabled: e.target.checked })}
+                                        style={{ marginRight: '6px' }}
+                                    />
+                                    Magnet Effect
+                                </label>
+
+                                {localSettings.magnetEnabled && (
+                                    <div style={{ marginLeft: '18px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <label style={{ fontSize: '10px', color: colors.textDim }}>Strength</label>
+                                            <span style={{ fontSize: '10px', color: colors.textMain }}>{(localSettings.magnetStrength * 100).toFixed(0)}%</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="0.1"
+                                            max="1"
+                                            step="0.1"
+                                            value={localSettings.magnetStrength}
+                                            onChange={(e) => setLocalSettings({ ...localSettings, magnetStrength: parseFloat(e.target.value) })}
+                                            style={{ width: '100%', height: '4px', accentColor: colors.accent }}
+                                        />
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
-                    <label style={{ display: 'flex', alignItems: 'center', fontSize: '13px', marginBottom: '8px' }}>
-                        <input
-                            type="checkbox"
-                            checked={localSettings.magnetEnabled}
-                            onChange={(e) => setLocalSettings({ ...localSettings, magnetEnabled: e.target.checked })}
-                            style={{ marginRight: '8px' }}
-                        />
-                        Magnet
-                    </label>
-
-                    {localSettings.magnetEnabled && (
-                        <div style={{ marginLeft: '24px', marginBottom: '8px' }}>
-                            <label style={{ display: 'block', fontSize: '11px', color: '#888', marginBottom: '4px' }}>
-                                Magnet Strength: {localSettings.magnetStrength}
-                            </label>
-                            <input
-                                type="range"
-                                min="0.1"
-                                max="1"
-                                step="0.1"
-                                value={localSettings.magnetStrength}
-                                onChange={(e) => setLocalSettings({ ...localSettings, magnetStrength: parseFloat(e.target.value) })}
-                                style={{ width: '100%' }}
-                            />
-                        </div>
-                    )}
-                </div>
-
-                {/* Buttons */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        style={{ padding: '8px 16px', backgroundColor: '#555', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleApply}
-                        style={{ padding: '8px 16px', backgroundColor: '#4cc2ff', color: 'black', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                    >
-                        Apply
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleOK}
-                        style={{ padding: '8px 16px', backgroundColor: '#107c10', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                    >
-                        OK
-                    </button>
+                    {/* Buttons */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            style={{
+                                padding: '6px 16px',
+                                backgroundColor: 'transparent',
+                                color: colors.textDim,
+                                border: `1px solid ${colors.border}`,
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontFamily: 'inherit'
+                            }}
+                        >
+                            CANCEL
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleOK}
+                            style={{
+                                padding: '6px 16px',
+                                backgroundColor: colors.accent,
+                                color: '#000',
+                                border: 'none',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                                fontFamily: 'inherit',
+                                fontWeight: '700'
+                            }}
+                        >
+                            OK
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
