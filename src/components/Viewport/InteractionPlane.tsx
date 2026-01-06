@@ -3,8 +3,42 @@ import React, { useCallback, useMemo, useRef } from 'react';
 import { useDrawing } from '../../context/DrawingContext';
 import type { ThreeEvent } from '@react-three/fiber';
 import { rafThrottle } from '../../utils/performance';
-import type { Entity, Point } from '../../types/entities';
+import type { Point } from '../../types/entities';
 import { closestPointOnEntity } from '../../utils/geometryUtils';
+
+// Entity tipi öncelik sırası - düşük değer = yüksek öncelik
+// Çizgi/kenar tipleri öncelikli, alan tipleri sonra
+const getEntityTypePriority = (type: string): number => {
+    switch (type) {
+        case 'LINE':
+        case 'ARC':
+        case 'SPLINE':
+            return 1; // En yüksek öncelik - tek çizgiler
+        case 'CIRCLE':
+        case 'ELLIPSE':
+        case 'LWPOLYLINE':
+        case 'POLYLINE':
+            return 2; // Kapalı şekiller
+        case 'DIMENSION':
+        case 'LEADER':
+            return 3; // Ölçü çizgileri
+        case 'POINT':
+            return 4; // Noktalar
+        case 'TEXT':
+        case 'MTEXT':
+            return 5; // Metinler
+        case 'TABLE':
+            return 6; // Tablolar
+        case 'HATCH':
+        case 'SOLID':
+            return 7; // Dolgu alanları - en düşük öncelik
+        case 'INSERT':
+        case 'BLOCK':
+            return 8; // Bloklar
+        default:
+            return 10;
+    }
+};
 
 const InteractionPlane = React.memo(() => {
     const {
@@ -45,19 +79,31 @@ const InteractionPlane = React.memo(() => {
         [handleMouseMove]
     );
 
-    // Throttled hover detection
+    // Throttled hover detection with priority system
     const throttledHoverDetection = useMemo(
         () => rafThrottle((point: Point) => {
             // Find closest entity for hover highlight
             let bestEntId: number | null = null;
             let minD = 10; // Hover tolerance
+            let bestPriority = Infinity;
 
             entities.forEach(ent => {
                 if (ent.visible === false) return;
                 const d = closestPointOnEntity(point[0], point[1], ent);
+                const priority = getEntityTypePriority(ent.type);
+
+                // Seçim: Mesafe tolerans içindeyse ve (daha yakın VEYA aynı mesafede daha yüksek öncelikli)
                 if (d < minD) {
-                    minD = d;
+                    // Mesafe farkı önemli (> 1 birim) ise mesafeye göre seç
+                    if (minD - d > 1 || priority <= bestPriority) {
+                        minD = d;
+                        bestEntId = ent.id;
+                        bestPriority = priority;
+                    }
+                } else if (Math.abs(d - minD) < 1 && priority < bestPriority) {
+                    // Mesafeler çok yakın (< 1 birim fark), önceliğe göre seç
                     bestEntId = ent.id;
+                    bestPriority = priority;
                 }
             });
 
@@ -154,31 +200,39 @@ const InteractionPlane = React.memo(() => {
         // Step 0 genellikle seçim aşamasıdır
         if (!activeCommand || (isSelectionCommand && step === 0)) {
             const point: Point = [e.point.x, e.point.y, 0];
-            let bestEnt = null;
+            let bestEntId: number | null = null;
             let minD = 15; // Seçim toleransı (daha geniş threshold)
+            let bestPriority = Infinity;
 
             entities.forEach(ent => {
                 if (ent.visible === false) return; // Sadece açıkça gizlenmişleri atla
                 const d = closestPointOnEntity(point[0], point[1], ent);
-                // En yakın ve threshold içinde
+                const priority = getEntityTypePriority(ent.type);
+
+                // Seçim: Mesafe tolerans içindeyse
                 if (d < minD) {
-                    minD = d;
-                    bestEnt = ent;
+                    // Mesafe farkı önemli (> 2 birim) ise mesafeye göre seç
+                    if (minD - d > 2 || priority <= bestPriority) {
+                        minD = d;
+                        bestEntId = ent.id;
+                        bestPriority = priority;
+                    }
+                } else if (Math.abs(d - minD) < 2 && priority < bestPriority) {
+                    // Mesafeler çok yakın (< 2 birim fark), önceliğe göre seç
+                    // Bu sayede HATCH içinde LWPOLYLINE kenarına yakın tıklandığında LWPOLYLINE seçilir
+                    bestEntId = ent.id;
+                    bestPriority = priority;
                 }
             });
 
-            if (bestEnt) {
-                // Çoklu seçim (Shift/Ctrl veya modify komutunda)
-                // toggleSelection fonksiyonu context'te tek argüman defined olsa bile ek argümanları yutabilir veya biz sadece ID göndeririz.
-                // Kullanıcı beklentisi: Tıkla seç. Modify komutu: Tıkla ekle.
-                // toggleSelection(ent.id) genellikle ekle/çıkar yapar.
-                toggleSelection((bestEnt as Entity).id);
+            if (bestEntId !== null) {
+                toggleSelection(bestEntId);
                 return; // Seçim yapıldıysa input gönderme
             }
         }
 
         handleCommandInput([e.point.x, e.point.y, 0]);
-    }, [handleCommandInput, zoomWindowMode, activeCommand, step, entities, toggleSelection]);
+    }, [handleCommandInput, zoomWindowMode, activeCommand, step, entities, toggleSelection, printWindowMode]);
 
     const handleDoubleClick = useCallback((e: ThreeEvent<MouseEvent>) => {
         // Sadece boşta ve komut yokken
@@ -186,21 +240,31 @@ const InteractionPlane = React.memo(() => {
 
         const point: Point = [e.point.x, e.point.y, 0];
 
-        // En yakın entity'yi bul
-        let bestEnt = null;
+        // En yakın entity'yi bul (öncelik sistemiyle)
+        let bestEntId: number | null = null;
         let minD = 5; // Tolerans
+        let bestPriority = Infinity;
 
         entities.forEach(ent => {
             if (!ent.visible) return;
             const d = closestPointOnEntity(point[0], point[1], ent);
+            const priority = getEntityTypePriority(ent.type);
+
             if (d < minD) {
-                minD = d;
-                bestEnt = ent;
+                if (minD - d > 1 || priority <= bestPriority) {
+                    minD = d;
+                    bestEntId = ent.id;
+                    bestPriority = priority;
+                }
+            } else if (Math.abs(d - minD) < 1 && priority < bestPriority) {
+                bestEntId = ent.id;
+                bestPriority = priority;
             }
         });
 
-        if (bestEnt) {
-            const entity = bestEnt as Entity;
+        if (bestEntId !== null) {
+            const entity = entities.find(e => e.id === bestEntId);
+            if (!entity) return;
             if (entity.type === 'TEXT' || entity.type === 'MTEXT') {
                 // Düzenleme diyaloğunu aç
                 setTextDialogState({

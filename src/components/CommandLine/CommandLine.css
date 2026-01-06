@@ -88,3 +88,46 @@
     outline: none;
     font-family: inherit;
 }
+
+/* Agent animations */
+@keyframes fadeSlide {
+    0% {
+        opacity: 0;
+        transform: translateX(10px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes agentPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 5px rgba(76, 194, 255, 0.3);
+    }
+
+    50% {
+        box-shadow: 0 0 15px rgba(76, 194, 255, 0.6);
+    }
+}
+
+.agent-pulse {
+    animation: agentPulse 1.5s ease-in-out infinite;
+}
+
+.spin-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}

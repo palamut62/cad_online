@@ -2,6 +2,7 @@ import { useState, FormEvent, useRef, useEffect } from 'react';
 import './CommandLine.css';
 import { useDrawing } from '../../context/DrawingContext';
 import { useAI } from '../../context/AIContext';
+import { AGENT_DESCRIPTIONS } from '../../types/aiTypes';
 
 
 const CommandLine = () => {
@@ -9,7 +10,7 @@ const CommandLine = () => {
     const [input, setInput] = useState('');
     const [aiInput, setAiInput] = useState('');
     const { startCommand, activeCommand, step, handleValueInput } = useDrawing();
-    const { generateCADCommands, isLoading: isAILoading, error: aiError, selectedModel, apiKey, clearError } = useAI();
+    const { generateCADCommands, isLoading: isAILoading, error: aiError, apiKey, clearError, useMultiAgent, activeAgent } = useAI();
 
     // Dragging state
     const [position, setPosition] = useState<{ x: number, y: number } | null>(null);
@@ -253,15 +254,64 @@ const CommandLine = () => {
                             placeholder="Doğal dil ile çizim yapın..."
                             style={{ caretColor: '#4cc2ff', color: '#999', fontSize: '11px' }}
                         />
-                        <div style={{ marginLeft: '10px', paddingRight: '10px', fontSize: '10px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: '100px', opacity: 0.4 }}>
+                        <div style={{
+                            marginLeft: '10px',
+                            paddingRight: '10px',
+                            fontSize: '9px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'flex-end',
+                            minWidth: '130px',
+                            transition: 'all 0.3s ease'
+                        }}>
                             {apiKey ? (
-                                selectedModel ? (
-                                    <span style={{ color: '#4cc2ff' }}>{selectedModel.split('/').pop()}</span>
+                                useMultiAgent ? (
+                                    <div
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            padding: '4px 8px',
+                                            borderRadius: '12px',
+                                            background: isAILoading && activeAgent
+                                                ? 'linear-gradient(90deg, rgba(76, 194, 255, 0.2), rgba(76, 255, 166, 0.2))'
+                                                : 'rgba(76, 255, 166, 0.1)',
+                                            border: `1px solid ${isAILoading && activeAgent ? '#4cc2ff' : '#4cffa6'}`,
+                                            transition: 'all 0.3s ease'
+                                        }}
+                                        className={isAILoading && activeAgent ? 'agent-pulse' : ''}
+                                    >
+                                        {isAILoading && activeAgent ? (
+                                            <>
+                                                <span
+                                                    className="material-icons spin-icon"
+                                                    style={{ fontSize: '12px', color: '#4cc2ff' }}
+                                                >
+                                                    sync
+                                                </span>
+                                                <span
+                                                    style={{
+                                                        color: '#4cc2ff',
+                                                        fontWeight: 600,
+                                                        animation: 'fadeSlide 0.3s ease-in-out'
+                                                    }}
+                                                    key={activeAgent}
+                                                >
+                                                    {AGENT_DESCRIPTIONS[activeAgent]?.name || activeAgent}
+                                                </span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span className="material-icons" style={{ fontSize: '12px', color: '#4cffa6' }}>hub</span>
+                                                <span style={{ color: '#4cffa6', fontWeight: 600 }}>Multi-Agent</span>
+                                            </>
+                                        )}
+                                    </div>
                                 ) : (
-                                    <span style={{ color: '#ff6b6b' }}>Model Yok</span>
+                                    <span style={{ color: '#888', opacity: 0.5, fontSize: '8px' }}>Tek Model</span>
                                 )
                             ) : (
-                                <span style={{ color: '#ff6b6b' }}>Ayarlar Eksik</span>
+                                <span style={{ color: '#ff6b6b', opacity: 0.7, fontSize: '8px' }}>API Key Yok</span>
                             )}
                         </div>
                     </div>

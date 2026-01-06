@@ -1,6 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { OpenRouterService } from '../services/OpenRouterService';
-import { OpenRouterModel, AIContextState } from '../types/aiTypes';
+import {
+    OpenRouterModel,
+    AIContextState,
+    AgentType,
+    AgentConfig,
+    AgentsConfiguration,
+    DEFAULT_AGENT_CONFIGS,
+    AgentHistoryEntry
+} from '../types/aiTypes';
 import { useDrawing } from './DrawingContext';
 
 const AIContext = createContext<AIContextState | null>(null);
@@ -21,29 +29,149 @@ const STORAGE_KEY_API = 'cad_ai_api_key';
 const STORAGE_KEY_MODEL = 'cad_ai_model';
 const STORAGE_KEY_PROMPT = 'cad_ai_system_prompt';
 const STORAGE_KEY_MODELS_CACHE = 'cad_ai_models_cache';
+const STORAGE_KEY_USE_MULTI_AGENT = 'cad_ai_use_multi_agent';
+const STORAGE_KEY_AGENTS_CONFIG = 'cad_ai_agents_config';
+const STORAGE_KEY_HISTORY = 'cad_ai_agent_history';
+const MODELS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 saat cache geçerlilik süresi
 
-export const AIProvider: React.FC<AIProviderProps> = ({ children }) => {
-    const [apiKey, setApiKeyState] = useState<string>(() => localStorage.getItem(STORAGE_KEY_API) || '');
-    const [selectedModel, setSelectedModel] = useState<string>(() => localStorage.getItem(STORAGE_KEY_MODEL) || 'openai/gpt-3.5-turbo');
-    const [systemPrompt, setSystemPromptState] = useState<string>(() => localStorage.getItem(STORAGE_KEY_PROMPT) || '');
-    const [availableModels, setAvailableModels] = useState<OpenRouterModel[]>(() => {
-        try {
-            const cached = localStorage.getItem(STORAGE_KEY_MODELS_CACHE);
-            return cached ? JSON.parse(cached) : [];
-        } catch {
+// Basit şifreleme/çözme (XOR tabanlı) - production'da daha güçlü bir yöntem kullanılmalı
+const OBFUSCATION_KEY = 'cad_ai_k3y_0bfusc4t10n';
+const obfuscateApiKey = (key: string): string => {
+    if (!key) return '';
+    try {
+        const result = key.split('').map((char, i) =>
+            String.fromCharCode(char.charCodeAt(0) ^ OBFUSCATION_KEY.charCodeAt(i % OBFUSCATION_KEY.length))
+        ).join('');
+        return btoa(result); // Base64 encode
+    } catch {
+        return '';
+    }
+};
+
+const deobfuscateApiKey = (encoded: string): string => {
+    if (!encoded) return '';
+    try {
+        const decoded = atob(encoded); // Base64 decode
+        return decoded.split('').map((char, i) =>
+            String.fromCharCode(char.charCodeAt(0) ^ OBFUSCATION_KEY.charCodeAt(i % OBFUSCATION_KEY.length))
+        ).join('');
+    } catch {
+        return '';
+    }
+};
+
+// Storage yardımcı fonksiyonları
+const getStoredApiKey = (): string => {
+    try {
+        const stored = sessionStorage.getItem(STORAGE_KEY_API) || localStorage.getItem(STORAGE_KEY_API);
+        if (!stored) return '';
+        // Eski format kontrolü (düz metin mi?)
+        if (stored.startsWith('sk-') || stored.startsWith('pk-')) {
+            return stored; // Migration için eski formatı kabul et
+        }
+        return deobfuscateApiKey(stored);
+    } catch {
+        return '';
+    }
+};
+
+const setStoredApiKey = (key: string, useSession: boolean = false): void => {
+    const obfuscated = obfuscateApiKey(key);
+    if (useSession) {
+        sessionStorage.setItem(STORAGE_KEY_API, obfuscated);
+        localStorage.removeItem(STORAGE_KEY_API); // sessionStorage kullanıyorsak localStorage'dan sil
+    } else {
+        localStorage.setItem(STORAGE_KEY_API, obfuscated);
+    }
+};
+
+// Cache yardımcı fonksiyonları
+interface ModelsCacheData {
+    models: OpenRouterModel[];
+    timestamp: number;
+}
+
+const getModelsCacheData = (): OpenRouterModel[] => {
+    try {
+        const cached = localStorage.getItem(STORAGE_KEY_MODELS_CACHE);
+        if (!cached) return [];
+        const data: ModelsCacheData = JSON.parse(cached);
+        // Cache süresi kontrolü
+        if (Date.now() - data.timestamp > MODELS_CACHE_TTL) {
+            localStorage.removeItem(STORAGE_KEY_MODELS_CACHE);
             return [];
         }
-    });
+        return data.models || [];
+    } catch {
+        return [];
+    }
+};
+
+const setModelsCacheData = (models: OpenRouterModel[]): void => {
+    const data: ModelsCacheData = {
+        models,
+        timestamp: Date.now()
+    };
+    localStorage.setItem(STORAGE_KEY_MODELS_CACHE, JSON.stringify(data));
+};
+
+// Agents config storage fonksiyonları
+const getStoredAgentsConfig = (): AgentsConfiguration => {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY_AGENTS_CONFIG);
+        if (!stored) return DEFAULT_AGENT_CONFIGS;
+        return JSON.parse(stored);
+    } catch {
+        return DEFAULT_AGENT_CONFIGS;
+    }
+};
+
+const setStoredAgentsConfig = (config: AgentsConfiguration): void => {
+    localStorage.setItem(STORAGE_KEY_AGENTS_CONFIG, JSON.stringify(config));
+};
+
+const getStoredUseMultiAgent = (): boolean => {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY_USE_MULTI_AGENT);
+        return stored === 'true';
+    } catch {
+        return false;
+    }
+};
+
+const getStoredHistory = (): AgentHistoryEntry[] => {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY_HISTORY);
+        return stored ? JSON.parse(stored) : [];
+    } catch {
+        return [];
+    }
+};
+
+export const AIProvider: React.FC<AIProviderProps> = ({ children }) => {
+    const [apiKey, setApiKeyState] = useState<string>(() => getStoredApiKey());
+    const [selectedModel, setSelectedModel] = useState<string>(() => localStorage.getItem(STORAGE_KEY_MODEL) || 'openai/gpt-3.5-turbo');
+    const [systemPrompt, setSystemPromptState] = useState<string>(() => localStorage.getItem(STORAGE_KEY_PROMPT) || '');
+    const [availableModels, setAvailableModels] = useState<OpenRouterModel[]>(() => getModelsCacheData());
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [lastWarnings, setLastWarnings] = useState<string[]>([]);
+
+    // Multi-Agent State
+    const [useMultiAgent, setUseMultiAgentState] = useState<boolean>(() => getStoredUseMultiAgent());
+    const [agentsConfig, setAgentsConfigState] = useState<AgentsConfiguration>(() => getStoredAgentsConfig());
+    const [activeAgent, setActiveAgent] = useState<AgentType | null>(null);
+
+    // History State
+    const [agentHistory, setAgentHistory] = useState<AgentHistoryEntry[]>(() => getStoredHistory());
 
     const { addEntity } = useDrawing();
 
     const service = React.useMemo(() => new OpenRouterService(apiKey), [apiKey]);
 
-    const setApiKey = (key: string) => {
+    const setApiKey = (key: string, persistToLocalStorage: boolean = true) => {
         setApiKeyState(key);
-        localStorage.setItem(STORAGE_KEY_API, key);
+        setStoredApiKey(key, !persistToLocalStorage);
     };
 
     const setSelectedModelWrapper = (model: string) => {
@@ -56,30 +184,77 @@ export const AIProvider: React.FC<AIProviderProps> = ({ children }) => {
         localStorage.setItem(STORAGE_KEY_PROMPT, prompt);
     };
 
-    const refreshModels = useCallback(async (keyOverride?: string) => {
-        const keyToUse = keyOverride || apiKey;
-        if (!keyToUse) return;
+    // Multi-Agent setters
+    const setUseMultiAgent = (enabled: boolean) => {
+        setUseMultiAgentState(enabled);
+        localStorage.setItem(STORAGE_KEY_USE_MULTI_AGENT, enabled ? 'true' : 'false');
+    };
 
-        // Re-initialize service if key is different (though service memozation depends on apiKey state, 
-        // for immediate check we might need a temp service or just trust the fetch logic isn't tied effectively to instance yet if we change logic)
-        // Actually, OpenRouterService takes key in constructor. 
-        // If we want to use a NEW key before state update, we must instantiate a temp service or update the service.
-        // Let's create a temp service instance if keyOverride is provided.
+    const setAgentConfig = (agent: AgentType, config: Partial<AgentConfig>) => {
+        setAgentsConfigState(prev => {
+            const updated = {
+                ...prev,
+                [agent]: { ...prev[agent], ...config }
+            };
+            setStoredAgentsConfig(updated);
+            return updated;
+        });
+    };
+
+    const resetAgentsConfig = () => {
+        setAgentsConfigState(DEFAULT_AGENT_CONFIGS);
+        setStoredAgentsConfig(DEFAULT_AGENT_CONFIGS);
+    };
+
+    const addToHistory = (entry: AgentHistoryEntry) => {
+        setAgentHistory(prev => {
+            const updated = [entry, ...prev].slice(0, 50); // Keep last 50 entries
+            localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(updated));
+            return updated;
+        });
+    };
+
+    const clearHistory = () => {
+        setAgentHistory([]);
+        localStorage.removeItem(STORAGE_KEY_HISTORY);
+    };
+
+    const refreshModels = useCallback(async (keyOverride?: string, forceRefresh: boolean = false) => {
+        const keyToUse = keyOverride || apiKey;
+        if (!keyToUse) {
+            setError('Model listesi için API anahtarı gerekli');
+            return;
+        }
+
+        // Cache kontrolü (force refresh değilse)
+        if (!forceRefresh && availableModels.length > 0) {
+            const cachedModels = getModelsCacheData();
+            if (cachedModels.length > 0) {
+                setAvailableModels(cachedModels);
+                return;
+            }
+        }
 
         setIsLoading(true);
-        setError(null); // Clear previous errors
+        setError(null);
         try {
             const tempService = keyOverride ? new OpenRouterService(keyOverride) : service;
             const models = await tempService.getModels();
+
+            if (models.length === 0) {
+                console.warn('API modeller döndürmedi');
+            }
+
             setAvailableModels(models);
-            localStorage.setItem(STORAGE_KEY_MODELS_CACHE, JSON.stringify(models));
-        } catch (err: any) {
-            console.error('Failed to load models', err);
-            setError(`Failed to refresh models: ${err.message}`);
+            setModelsCacheData(models);
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Bilinmeyen hata';
+            console.error('Model yükleme hatası:', err);
+            setError(`Model listesi yüklenemedi: ${errorMessage}`);
         } finally {
             setIsLoading(false);
         }
-    }, [apiKey, service]);
+    }, [apiKey, service, availableModels.length]);
 
     useEffect(() => {
         if (apiKey && availableModels.length === 0) {
@@ -87,32 +262,127 @@ export const AIProvider: React.FC<AIProviderProps> = ({ children }) => {
         }
     }, [apiKey, refreshModels, availableModels.length]);
 
-    const generateCADCommands = async (userPrompt: string) => {
+    const generateCADCommands = async (userPrompt: string): Promise<{ success: boolean; entityCount: number; warnings?: string[] }> => {
+        if (!userPrompt || userPrompt.trim().length === 0) {
+            setError('Çizim komutu boş olamaz');
+            return { success: false, entityCount: 0 };
+        }
+
+        if (!apiKey) {
+            setError('AI kullanmak için API anahtarı gerekli. Ayarlar > AI sekmesinden ekleyin.');
+            return { success: false, entityCount: 0 };
+        }
+
+        if (!selectedModel && !useMultiAgent) {
+            setError('Lütfen bir AI modeli seçin');
+            return { success: false, entityCount: 0 };
+        }
+
         setIsLoading(true);
         setError(null);
-        try {
-            const result = await service.generateCompletion(userPrompt, selectedModel, systemPrompt);
+        setLastWarnings([]);
 
-            if (result && result.entities && Array.isArray(result.entities)) {
-                // Add entities to the drawing
-                result.entities.forEach((entity: any) => {
-                    // Basic validation/sanitization could happen here
-                    addEntity(entity);
+        try {
+            let result: { entities: any[]; warnings?: string[] };
+
+            if (useMultiAgent) {
+                // Multi-Agent Pipeline
+                console.log('🔄 Multi-Agent modu aktif');
+                const orchestrationResult = await service.runOrchestration(
+                    userPrompt,
+                    agentsConfig,
+                    (agent) => setActiveAgent(agent as AgentType | null)
+                );
+                result = {
+                    entities: orchestrationResult.entities,
+                    warnings: orchestrationResult.warnings
+                };
+
+                // Add to history
+                addToHistory({
+                    id: Date.now().toString(),
+                    timestamp: Date.now(),
+                    userPrompt,
+                    orchestrationResult,
+                    modelUsed: 'Multi-Agent'
+                });
+
+                // Log agent results for debugging
+                orchestrationResult.agentResults.forEach(ar => {
+                    console.log(`[${ar.agent}] ${ar.success ? '✅' : '❌'} (${ar.duration}ms)`);
                 });
             } else {
-                console.warn("AI response did not contain expected 'entities' array:", result);
-                // Determine if we should show an error or just a warning if it just chatted back
+                // Tek model modu (mevcut davranış)
+                result = await service.generateCompletion(userPrompt, selectedModel, systemPrompt);
+
+                // Convert single model result to pseudo-orchestration result for history
+                const orchestrationResult = {
+                    success: true,
+                    entities: result.entities,
+                    agentResults: [{
+                        agent: 'cadDrawing' as AgentType,
+                        success: true,
+                        output: JSON.stringify(result.entities),
+                        duration: 0
+                    }],
+                    totalDuration: 0,
+                    warnings: result.warnings
+                };
+
+                // Add to history
+                addToHistory({
+                    id: Date.now().toString(),
+                    timestamp: Date.now(),
+                    userPrompt,
+                    orchestrationResult,
+                    modelUsed: selectedModel
+                });
             }
 
-        } catch (err: any) {
-            setError(err.message || 'An error occurred during AI generation');
-            console.error(err);
+            if (!result || !result.entities || !Array.isArray(result.entities)) {
+                setError('AI geçerli bir çizim yanıtı döndürmedi');
+                return { success: false, entityCount: 0 };
+            }
+
+            // Warnings varsa kaydet
+            if (result.warnings && result.warnings.length > 0) {
+                setLastWarnings(result.warnings);
+                console.warn('AI entity uyarıları:', result.warnings);
+            }
+
+            // Entity'leri çizime ekle
+            let addedCount = 0;
+            for (const entity of result.entities) {
+                try {
+                    addEntity(entity);
+                    addedCount++;
+                } catch (entityErr) {
+                    console.error('Entity ekleme hatası:', entityErr, entity);
+                }
+            }
+
+            if (addedCount === 0 && result.entities.length > 0) {
+                setError('Hiçbir entity çizime eklenemedi. Lütfen farklı bir komut deneyin.');
+                return { success: false, entityCount: 0 };
+            }
+
+            return {
+                success: true,
+                entityCount: addedCount,
+                warnings: result.warnings
+            };
+
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'AI işlemi sırasında bir hata oluştu';
+            setError(errorMessage);
+            console.error('AI generation hatası:', err);
+            return { success: false, entityCount: 0 };
         } finally {
             setIsLoading(false);
         }
     };
 
-    const testModel = async (keyOverride?: string, modelOverride?: string) => {
+    const testModel = async (keyOverride?: string, modelOverride?: string): Promise<{ success: boolean; message: string }> => {
         const keyToUse = keyOverride || apiKey;
         const modelToUse = modelOverride || selectedModel;
 
@@ -120,19 +390,22 @@ export const AIProvider: React.FC<AIProviderProps> = ({ children }) => {
         if (!modelToUse) return { success: false, message: 'Model seçili değil' };
 
         setIsLoading(true);
+        setError(null);
         try {
             const tempService = keyOverride ? new OpenRouterService(keyOverride) : service;
             const response = await tempService.testModel(modelToUse);
             return { success: true, message: response };
-        } catch (err: any) {
-            console.error('Model test failed', err);
-            return { success: false, message: err.message || 'Bilinmeyen bir hata oluştu' };
+        } catch (err: unknown) {
+            const errorMessage = err instanceof Error ? err.message : 'Bilinmeyen bir hata oluştu';
+            console.error('Model test hatası:', err);
+            return { success: false, message: errorMessage };
         } finally {
             setIsLoading(false);
         }
     };
 
     const clearError = () => setError(null);
+    const clearWarnings = () => setLastWarnings([]);
 
     const value: AIContextState = {
         apiKey,
@@ -147,7 +420,19 @@ export const AIProvider: React.FC<AIProviderProps> = ({ children }) => {
         availableModels,
         refreshModels,
         testModel,
-        clearError
+        clearError,
+        lastWarnings,
+        clearWarnings,
+        // Multi-Agent
+        useMultiAgent,
+        setUseMultiAgent,
+        agentsConfig,
+        setAgentConfig,
+        resetAgentsConfig,
+        activeAgent,
+        agentHistory,
+        addToHistory,
+        clearHistory
     };
 
     return (
@@ -156,3 +441,4 @@ export const AIProvider: React.FC<AIProviderProps> = ({ children }) => {
         </AIContext.Provider>
     );
 };
+

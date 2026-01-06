@@ -93,11 +93,45 @@ export const closestPointOnEntity = (px: number, py: number, ent: Entity): numbe
     const dx = px - ent.position[0];
     const dy = py - ent.position[1];
     return Math.sqrt(dx * dx + dy * dy);
+  } else if (ent.type === 'SPLINE') {
+    // SPLINE için kontrol noktaları veya fit noktaları arasındaki segmentlere mesafe
+    const points = ent.controlPoints || ent.fitPoints || [];
+    if (points.length < 2) return Infinity;
+
+    let minDist = Infinity;
+
+    // Kontrol noktalarına olan mesafe
+    for (const pt of points) {
+      const dx = px - pt[0];
+      const dy = py - pt[1];
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < minDist) minDist = d;
+    }
+
+    // Kontrol noktaları arasındaki segmentlere mesafe (yaklaşık)
+    for (let i = 0; i < points.length - 1; i++) {
+      const d = distancePointToLineSegment(
+        px, py,
+        points[i][0], points[i][1],
+        points[i + 1][0], points[i + 1][1]
+      );
+      if (d < minDist) minDist = d;
+    }
+
+    // Kapalı spline ise son-ilk segment
+    if (ent.closed && points.length > 2) {
+      const d = distancePointToLineSegment(
+        px, py,
+        points[points.length - 1][0], points[points.length - 1][1],
+        points[0][0], points[0][1]
+      );
+      if (d < minDist) minDist = d;
+    }
+
+    return minDist;
   } else if (ent.type === 'HATCH') {
     // Hatch için boundary polyline'ını kullan
-    // Debug: Check if boundary exists
     if (!ent.boundary) {
-      console.log('HATCH selection: No boundary found', ent);
       return Infinity;
     }
 
@@ -105,11 +139,10 @@ export const closestPointOnEntity = (px: number, py: number, ent: Entity): numbe
     const verts = ent.boundary.vertices || (ent.boundary as any);
 
     if (!verts || !Array.isArray(verts) || verts.length < 3) {
-      console.log('HATCH selection: Invalid vertices', ent.boundary);
       return Infinity;
     }
 
-    let minDist = Infinity;
+    let minEdgeDist = Infinity;
 
     // Boundary kenarlarına olan mesafe
     for (let i = 0; i < verts.length; i++) {
@@ -123,21 +156,35 @@ export const closestPointOnEntity = (px: number, py: number, ent: Entity): numbe
       const y2 = Array.isArray(next) ? next[1] : (next as any).y || 0;
 
       const d = distancePointToLineSegment(px, py, x1, y1, x2, y2);
-      if (d < minDist) minDist = d;
+      if (d < minEdgeDist) minEdgeDist = d;
     }
 
-    // Ayrıca noktanın hatch içinde olup olmadığını kontrol et (point-in-polygon)
     // Convert vertices to Point format for isPointInsidePolygon
     const pointVerts: Point[] = verts.map((v: any) => {
       if (Array.isArray(v) && v.length >= 2) return [v[0], v[1], v[2] || 0] as Point;
       return [v.x || 0, v.y || 0, v.z || 0] as Point;
     });
 
+    // Noktanın hatch içinde olup olmadığını kontrol et
     if (isPointInsidePolygon(px, py, pointVerts)) {
-      return 0; // İçerideyse mesafe 0
+      // HATCH içindeyse - boundary kenarına yakınlığa göre karar ver
+      // Eğer kenara çok yakınsa (< 3 birim), kenarı seçmek isteyebilir (boundary entity)
+      // Bu yüzden HATCH için küçük bir "iç mesafe" değeri döndür
+      // Bu değer boundary seçiminden biraz daha yüksek olmalı
+      const HATCH_INTERIOR_PRIORITY = 2.5; // Boundary kenarından bu kadar uzaksa HATCH seçilir
+
+      if (minEdgeDist < HATCH_INTERIOR_PRIORITY) {
+        // Kenara yakın - boundary seçimi için kenara mesafeyi döndür
+        // Ama hafif arttır ki tam kenardayken boundary seçilebilsin
+        return minEdgeDist + 0.1;
+      }
+
+      // İç kısımdaysa - seçilebilir mesafe döndür
+      return HATCH_INTERIOR_PRIORITY;
     }
 
-    return minDist;
+    // Dışarıdaysa kenar mesafesi
+    return minEdgeDist;
   } else if (ent.type === 'DONUT') {
     const dx = px - ent.center[0];
     const dy = py - ent.center[1];
@@ -540,6 +587,18 @@ export const getSnapPoints = (ent: Entity): SnapPoint[] => {
     // Quadrants could be added here
   } else if (ent.type === 'POINT') {
     snaps.push({ type: 'ENDPOINT', point: ent.position }); // Points act as endpoints
+  } else if (ent.type === 'SPLINE') {
+    // SPLINE için kontrol/fit noktaları
+    const points = ent.controlPoints || ent.fitPoints || [];
+    points.forEach((pt, i) => {
+      snaps.push({ type: 'ENDPOINT', point: pt });
+      if (i < points.length - 1) {
+        snaps.push({ type: 'MIDPOINT', point: midpoint(pt, points[i + 1]) });
+      }
+    });
+    if (ent.closed && points.length > 2) {
+      snaps.push({ type: 'MIDPOINT', point: midpoint(points[points.length - 1], points[0]) });
+    }
   }
 
   return snaps;
@@ -620,6 +679,12 @@ export const getGripPoints = (ent: Entity): GripPoint[] => {
     grips.push({ point: ent.center, type: 'center' });
     grips.push({ point: [ent.center[0] + ent.rx, ent.center[1], 0], type: 'quadrant' });
     grips.push({ point: [ent.center[0], ent.center[1] + ent.ry, 0], type: 'quadrant' });
+  } else if (ent.type === 'SPLINE') {
+    // SPLINE için kontrol/fit noktaları
+    const points = ent.controlPoints || ent.fitPoints || [];
+    points.forEach((pt, i) => {
+      grips.push({ point: pt, type: 'vertex', index: i });
+    });
   } else if (ent.type === 'HATCH') {
     // Hatch için boundary köşe noktalarını grip olarak ekle
     if (ent.boundary && ent.boundary.vertices) {
@@ -727,6 +792,10 @@ export const isEntityInBox = (ent: Entity, min: Point, max: Point): boolean => {
     return ent.vertices.every(v => isPointInBox(v, min, max));
   } else if (ent.type === 'POINT') {
     return isPointInBox(ent.position, min, max);
+  } else if (ent.type === 'SPLINE') {
+    const points = ent.controlPoints || ent.fitPoints || [];
+    if (points.length === 0) return false;
+    return points.every(v => isPointInBox(v, min, max));
   } else if (ent.type === 'HATCH') {
     if (!ent.boundary || !ent.boundary.vertices) return false;
     return ent.boundary.vertices.every(v => isPointInBox(v, min, max));
@@ -810,6 +879,30 @@ export const doesEntityIntersectBox = (ent: Entity, min: Point, max: Point): boo
     return false;
   } else if (ent.type === 'POINT') {
     return isPointInBox(ent.position, min, max);
+  } else if (ent.type === 'SPLINE') {
+    const points = ent.controlPoints || ent.fitPoints || [];
+    if (points.length === 0) return false;
+    // Check if any segment intersects the box
+    for (let i = 0; i < points.length - 1; i++) {
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const lineMinX = Math.min(p1[0], p2[0]);
+      const lineMaxX = Math.max(p1[0], p2[0]);
+      const lineMinY = Math.min(p1[1], p2[1]);
+      const lineMaxY = Math.max(p1[1], p2[1]);
+      if (!(lineMaxX < min[0] || lineMinX > max[0] || lineMaxY < min[1] || lineMinY > max[1])) return true;
+    }
+    // Kapalı spline
+    if (ent.closed && points.length > 2) {
+      const p1 = points[points.length - 1];
+      const p2 = points[0];
+      const lineMinX = Math.min(p1[0], p2[0]);
+      const lineMaxX = Math.max(p1[0], p2[0]);
+      const lineMinY = Math.min(p1[1], p2[1]);
+      const lineMaxY = Math.max(p1[1], p2[1]);
+      if (!(lineMaxX < min[0] || lineMinX > max[0] || lineMaxY < min[1] || lineMinY > max[1])) return true;
+    }
+    return false;
   } else if (ent.type === 'HATCH') {
     if (!ent.boundary || !ent.boundary.vertices) return false;
     // Check if any edge intersects the box

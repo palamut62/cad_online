@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { useAI } from '../../context/AIContext';
+import { AgentType, AGENT_DESCRIPTIONS } from '../../types/aiTypes';
 
 interface ApplicationSettingsDialogProps {
     isOpen: boolean;
@@ -15,7 +16,17 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
     // Test state
     const [testResult, setTestResult] = useState<{ success: boolean, message: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);
-    const { apiKey, setApiKey, selectedModel, setSelectedModel, systemPrompt, setSystemPrompt, availableModels, refreshModels, isLoading, error, testModel } = useAI();
+    const {
+        apiKey, setApiKey, selectedModel, setSelectedModel, systemPrompt, setSystemPrompt,
+        availableModels, refreshModels, isLoading, error, testModel,
+        useMultiAgent, setUseMultiAgent, agentsConfig, setAgentConfig, resetAgentsConfig
+    } = useAI();
+
+    // Agent test state
+    const [agentTestResults, setAgentTestResults] = useState<Record<string, { success: boolean; message: string } | null>>({});
+    const [isTestingAgents, setIsTestingAgents] = useState(false);
+    const [agentModelFilter, setAgentModelFilter] = useState<'all' | 'free' | 'high_context'>('free');
+    const [isRefreshingAgentModels, setIsRefreshingAgentModels] = useState(false);
 
     // Local state for form management (AI)
     const [localApiKey, setLocalApiKey] = useState(apiKey);
@@ -183,7 +194,8 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                 >
                     {[
                         { id: 'general', label: 'GENEL' },
-                        { id: 'ai', label: 'AI / YAPAY ZEKA' }
+                        { id: 'ai', label: 'AI / TEK MODEL' },
+                        { id: 'agents', label: 'AI AGENTS' }
                     ].map(tab => (
                         <button
                             key={tab.id}
@@ -493,6 +505,440 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                 <button type="submit" style={{ padding: '6px 20px', backgroundColor: colors.accent, color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '700', fontSize: '10px' }}>SAVE / KAYDET</button>
                             </div>
                         </form>
+                    )}
+
+                    {/* AI AGENTS Tab */}
+                    {activeTab === 'agents' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            {/* Multi-Agent Toggle */}
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '12px 16px',
+                                background: useMultiAgent ? 'rgba(76, 194, 255, 0.1)' : 'rgba(255,255,255,0.03)',
+                                border: `1px solid ${useMultiAgent ? colors.accent : colors.border}`,
+                                borderRadius: '8px'
+                            }}>
+                                <div>
+                                    <div style={{ color: colors.textMain, fontWeight: '700', fontSize: '12px', marginBottom: '4px' }}>
+                                        <span className="material-icons" style={{ fontSize: '16px', verticalAlign: 'middle', marginRight: '6px' }}>hub</span>
+                                        Multi-Agent Modu
+                                    </div>
+                                    <div style={{ color: colors.textDim, fontSize: '10px' }}>
+                                        6 özel ajan ile daha akıllı CAD üretimi
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setUseMultiAgent(!useMultiAgent)}
+                                    style={{
+                                        width: '50px',
+                                        height: '26px',
+                                        borderRadius: '13px',
+                                        border: 'none',
+                                        background: useMultiAgent ? colors.accent : 'rgba(255,255,255,0.1)',
+                                        cursor: 'pointer',
+                                        position: 'relative',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    <div style={{
+                                        width: '20px',
+                                        height: '20px',
+                                        borderRadius: '50%',
+                                        background: '#fff',
+                                        position: 'absolute',
+                                        top: '3px',
+                                        left: useMultiAgent ? '27px' : '3px',
+                                        transition: 'all 0.2s',
+                                        boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                                    }} />
+                                </button>
+                            </div>
+
+                            {/* API Key Reminder */}
+                            {!apiKey && (
+                                <div style={{ padding: '12px', background: 'rgba(255,107,107,0.1)', border: '1px solid rgba(255,107,107,0.3)', borderRadius: '8px', color: colors.error, fontSize: '11px' }}>
+                                    <span className="material-icons" style={{ fontSize: '14px', verticalAlign: 'middle', marginRight: '6px' }}>warning</span>
+                                    API Key gerekli. "AI / TEK MODEL" sekmesinden API anahtarınızı ekleyin.
+                                </div>
+                            )}
+
+                            {/* Agents Configuration */}
+                            {useMultiAgent && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                                        <span style={{ color: colors.accent, fontSize: '10px', fontWeight: '700' }}>AJAN KONFİGÜRASYONLARI</span>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <button
+                                                onClick={async () => {
+                                                    if (!apiKey) {
+                                                        alert('API Key gerekli!');
+                                                        return;
+                                                    }
+                                                    setIsTestingAgents(true);
+                                                    setAgentTestResults({});
+                                                    const results: Record<string, { success: boolean; message: string }> = {};
+
+                                                    for (const agentKey of Object.keys(agentsConfig) as AgentType[]) {
+                                                        const config = agentsConfig[agentKey];
+                                                        if (!config.enabled) {
+                                                            results[agentKey] = { success: true, message: 'Devre dışı' };
+                                                            continue;
+                                                        }
+                                                        try {
+                                                            const result = await testModel(apiKey, config.model);
+                                                            results[agentKey] = result;
+                                                            setAgentTestResults({ ...results });
+                                                        } catch (e) {
+                                                            results[agentKey] = { success: false, message: e instanceof Error ? e.message : 'Hata' };
+                                                            setAgentTestResults({ ...results });
+                                                        }
+                                                    }
+                                                    setIsTestingAgents(false);
+                                                }}
+                                                disabled={isTestingAgents || !apiKey}
+                                                style={{
+                                                    background: 'rgba(76, 194, 255, 0.1)',
+                                                    border: `1px solid ${colors.accent}`,
+                                                    color: colors.accent,
+                                                    cursor: apiKey ? 'pointer' : 'not-allowed',
+                                                    fontSize: '9px',
+                                                    padding: '4px 8px',
+                                                    borderRadius: '4px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    opacity: apiKey ? 1 : 0.5
+                                                }}
+                                            >
+                                                <span className={`material-icons ${isTestingAgents ? 'spin-icon' : ''}`} style={{ fontSize: '12px' }}>
+                                                    {isTestingAgents ? 'sync' : 'play_arrow'}
+                                                </span>
+                                                {isTestingAgents ? 'Test Ediliyor...' : 'Tüm Modelleri Test Et'}
+                                            </button>
+                                            <button
+                                                onClick={async () => {
+                                                    if (!apiKey) {
+                                                        alert('API Key gerekli!');
+                                                        return;
+                                                    }
+                                                    setIsRefreshingAgentModels(true);
+                                                    try {
+                                                        await refreshModels(apiKey, true);
+                                                    } finally {
+                                                        setIsRefreshingAgentModels(false);
+                                                    }
+                                                }}
+                                                disabled={isRefreshingAgentModels || !apiKey}
+                                                style={{
+                                                    background: 'rgba(76, 255, 166, 0.1)',
+                                                    border: '1px solid #4cffa6',
+                                                    color: '#4cffa6',
+                                                    cursor: apiKey ? 'pointer' : 'not-allowed',
+                                                    fontSize: '9px',
+                                                    padding: '4px 8px',
+                                                    borderRadius: '4px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                    opacity: apiKey ? 1 : 0.5
+                                                }}
+                                            >
+                                                <span className={`material-icons ${isRefreshingAgentModels ? 'spin-icon' : ''}`} style={{ fontSize: '12px' }}>
+                                                    {isRefreshingAgentModels ? 'sync' : 'refresh'}
+                                                </span>
+                                                {isRefreshingAgentModels ? 'Yenileniyor...' : 'Modelleri Yenile'}
+                                            </button>
+                                            <button
+                                                onClick={resetAgentsConfig}
+                                                style={{ background: 'none', border: 'none', color: colors.textDim, cursor: 'pointer', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                            >
+                                                <span className="material-icons" style={{ fontSize: '12px' }}>restart_alt</span>
+                                                Sıfırla
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Model Filter */}
+                                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <span style={{ color: colors.textDim, fontSize: '9px' }}>Filtre:</span>
+                                        <button
+                                            onClick={() => setAgentModelFilter('free')}
+                                            style={{
+                                                padding: '3px 8px',
+                                                borderRadius: '4px',
+                                                border: 'none',
+                                                background: agentModelFilter === 'free' ? '#4cffa6' : 'rgba(255,255,255,0.05)',
+                                                color: agentModelFilter === 'free' ? '#000' : colors.textDim,
+                                                fontSize: '9px',
+                                                fontWeight: agentModelFilter === 'free' ? '700' : 'normal',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            ⭐ Ücretsiz
+                                        </button>
+                                        <button
+                                            onClick={() => setAgentModelFilter('high_context')}
+                                            style={{
+                                                padding: '3px 8px',
+                                                borderRadius: '4px',
+                                                border: 'none',
+                                                background: agentModelFilter === 'high_context' ? '#4cc2ff' : 'rgba(255,255,255,0.05)',
+                                                color: agentModelFilter === 'high_context' ? '#000' : colors.textDim,
+                                                fontSize: '9px',
+                                                fontWeight: agentModelFilter === 'high_context' ? '700' : 'normal',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            📚 Yüksek Context ({'>'}100k)
+                                        </button>
+                                        <button
+                                            onClick={() => setAgentModelFilter('all')}
+                                            style={{
+                                                padding: '3px 8px',
+                                                borderRadius: '4px',
+                                                border: 'none',
+                                                background: agentModelFilter === 'all' ? colors.accent : 'rgba(255,255,255,0.05)',
+                                                color: agentModelFilter === 'all' ? '#000' : colors.textDim,
+                                                fontSize: '9px',
+                                                fontWeight: agentModelFilter === 'all' ? '700' : 'normal',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Tümü
+                                        </button>
+                                    </div>
+
+                                    {/* Test Results Summary */}
+                                    {Object.keys(agentTestResults).length > 0 && (
+                                        <div style={{
+                                            padding: '10px',
+                                            background: 'rgba(0,0,0,0.2)',
+                                            borderRadius: '6px',
+                                            border: `1px solid ${colors.border}`
+                                        }}>
+                                            <div style={{ fontSize: '9px', fontWeight: '700', color: colors.textDim, marginBottom: '8px' }}>TEST SONUÇLARI</div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                                {(Object.keys(AGENT_DESCRIPTIONS) as AgentType[]).map(agentKey => {
+                                                    const result = agentTestResults[agentKey];
+                                                    const agent = AGENT_DESCRIPTIONS[agentKey];
+                                                    if (!result) return (
+                                                        <div key={agentKey} style={{
+                                                            padding: '4px 8px',
+                                                            borderRadius: '4px',
+                                                            background: 'rgba(255,255,255,0.05)',
+                                                            fontSize: '9px',
+                                                            color: colors.textDim,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px'
+                                                        }}>
+                                                            <span className="material-icons spin-icon" style={{ fontSize: '10px' }}>sync</span>
+                                                            {agent.name}
+                                                        </div>
+                                                    );
+                                                    return (
+                                                        <div key={agentKey} style={{
+                                                            padding: '4px 8px',
+                                                            borderRadius: '4px',
+                                                            background: result.success ? 'rgba(76, 255, 166, 0.1)' : 'rgba(255, 107, 107, 0.1)',
+                                                            border: `1px solid ${result.success ? 'rgba(76, 255, 166, 0.3)' : 'rgba(255, 107, 107, 0.3)'}`,
+                                                            fontSize: '9px',
+                                                            color: result.success ? '#4cffa6' : '#ff6b6b',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '4px'
+                                                        }}>
+                                                            <span className="material-icons" style={{ fontSize: '10px' }}>
+                                                                {result.success ? 'check_circle' : 'error'}
+                                                            </span>
+                                                            {agent.name}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Agent Cards */}
+                                    {(Object.keys(AGENT_DESCRIPTIONS) as AgentType[]).map((agentKey) => {
+                                        const agent = AGENT_DESCRIPTIONS[agentKey];
+                                        const config = agentsConfig[agentKey];
+
+                                        return (
+                                            <div
+                                                key={agentKey}
+                                                style={{
+                                                    padding: '12px',
+                                                    background: config.enabled ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.2)',
+                                                    border: `1px solid ${colors.border}`,
+                                                    borderRadius: '8px',
+                                                    opacity: config.enabled ? 1 : 0.6
+                                                }}
+                                            >
+                                                {/* Agent Header */}
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span className="material-icons" style={{ fontSize: '18px', color: colors.accent }}>{agent.icon}</span>
+                                                        <div>
+                                                            <div style={{ color: colors.textMain, fontWeight: '600', fontSize: '11px' }}>{agent.name}</div>
+                                                            <div style={{ color: colors.textDim, fontSize: '9px' }}>{agent.description}</div>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setAgentConfig(agentKey, { enabled: !config.enabled })}
+                                                        style={{
+                                                            width: '36px',
+                                                            height: '20px',
+                                                            borderRadius: '10px',
+                                                            border: 'none',
+                                                            background: config.enabled ? '#4cffa6' : 'rgba(255,255,255,0.1)',
+                                                            cursor: 'pointer',
+                                                            position: 'relative'
+                                                        }}
+                                                    >
+                                                        <div style={{
+                                                            width: '14px',
+                                                            height: '14px',
+                                                            borderRadius: '50%',
+                                                            background: '#fff',
+                                                            position: 'absolute',
+                                                            top: '3px',
+                                                            left: config.enabled ? '19px' : '3px',
+                                                            transition: 'all 0.15s'
+                                                        }} />
+                                                    </button>
+                                                </div>
+
+                                                {/* Agent Settings */}
+                                                {config.enabled && (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '10px', borderTop: `1px solid ${colors.border}` }}>
+                                                        {/* Model Select */}
+                                                        <div>
+                                                            <label style={{ display: 'block', fontSize: '9px', color: colors.textDim, marginBottom: '4px' }}>MODEL</label>
+                                                            <select
+                                                                value={config.model}
+                                                                onChange={(e) => setAgentConfig(agentKey, { model: e.target.value })}
+                                                                style={{
+                                                                    width: '100%',
+                                                                    padding: '6px 8px',
+                                                                    backgroundColor: colors.surface,
+                                                                    color: colors.textMain,
+                                                                    border: `1px solid ${colors.border}`,
+                                                                    borderRadius: '4px',
+                                                                    fontSize: '10px',
+                                                                    outline: 'none'
+                                                                }}
+                                                            >
+                                                                <option value="" disabled>Model Seçin...</option>
+
+                                                                {/* FILTER: FREE */}
+                                                                {(agentModelFilter === 'free' || agentModelFilter === 'all') && (
+                                                                    <optgroup label="⭐ Ücretsiz Modeller">
+                                                                        {availableModels
+                                                                            .filter(m => m.id.includes(':free'))
+                                                                            .sort((a, b) => (b.context_length || 0) - (a.context_length || 0))
+                                                                            .map(m => (
+                                                                                <option key={m.id} value={m.id}>
+                                                                                    {m.name} ({m.context_length ? `${Math.round(m.context_length / 1000)}k` : '?'})
+                                                                                </option>
+                                                                            ))
+                                                                        }
+                                                                    </optgroup>
+                                                                )}
+
+                                                                {/* FILTER: HIGH CONTEXT (>100k) */}
+                                                                {(agentModelFilter === 'high_context' || agentModelFilter === 'all') && (
+                                                                    <optgroup label="📚 Yüksek Context (>100k)">
+                                                                        {availableModels
+                                                                            .filter(m => (m.context_length || 0) >= 100000 && (agentModelFilter === 'high_context' || !m.id.includes(':free')))
+                                                                            .sort((a, b) => (b.context_length || 0) - (a.context_length || 0))
+                                                                            .map(m => (
+                                                                                <option key={m.id} value={m.id}>
+                                                                                    {m.name} ({Math.round((m.context_length || 0) / 1000)}k) {m.id.includes(':free') ? '⭐' : ''}
+                                                                                </option>
+                                                                            ))
+                                                                        }
+                                                                    </optgroup>
+                                                                )}
+
+                                                                {/* FILTER: ALL (Remaining) */}
+                                                                {agentModelFilter === 'all' && (
+                                                                    <optgroup label="Diğer Modeller">
+                                                                        {availableModels
+                                                                            .filter(m => !m.id.includes(':free') && (m.context_length || 0) < 100000)
+                                                                            .slice(0, 50)
+                                                                            .map(m => (
+                                                                                <option key={m.id} value={m.id}>
+                                                                                    {m.name} ({m.context_length ? `${Math.round(m.context_length / 1000)}k` : '?'})
+                                                                                </option>
+                                                                            ))
+                                                                        }
+                                                                    </optgroup>
+                                                                )}
+                                                            </select>
+                                                        </div>
+
+                                                        {/* Temperature & Max Tokens */}
+                                                        <div style={{ display: 'flex', gap: '12px' }}>
+                                                            <div style={{ flex: 1 }}>
+                                                                <label style={{ display: 'block', fontSize: '9px', color: colors.textDim, marginBottom: '4px' }}>
+                                                                    TEMPERATURE: {config.temperature}
+                                                                </label>
+                                                                <input
+                                                                    type="range"
+                                                                    min="0"
+                                                                    max="1"
+                                                                    step="0.05"
+                                                                    value={config.temperature}
+                                                                    onChange={(e) => setAgentConfig(agentKey, { temperature: parseFloat(e.target.value) })}
+                                                                    style={{ width: '100%', accentColor: colors.accent }}
+                                                                />
+                                                            </div>
+                                                            <div style={{ flex: 1 }}>
+                                                                <label style={{ display: 'block', fontSize: '9px', color: colors.textDim, marginBottom: '4px' }}>
+                                                                    MAX TOKENS: {config.maxTokens}
+                                                                </label>
+                                                                <input
+                                                                    type="range"
+                                                                    min="100"
+                                                                    max="2000"
+                                                                    step="100"
+                                                                    value={config.maxTokens}
+                                                                    onChange={(e) => setAgentConfig(agentKey, { maxTokens: parseInt(e.target.value) })}
+                                                                    style={{ width: '100%', accentColor: colors.accent }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+
+                                    {/* Pipeline Info */}
+                                    <div style={{ padding: '12px', background: 'rgba(76, 194, 255, 0.05)', border: `1px solid rgba(76, 194, 255, 0.2)`, borderRadius: '8px' }}>
+                                        <div style={{ color: colors.accent, fontSize: '10px', fontWeight: '700', marginBottom: '8px' }}>
+                                            <span className="material-icons" style={{ fontSize: '12px', verticalAlign: 'middle', marginRight: '4px' }}>info</span>
+                                            ORKESTRASYON AKIŞI
+                                        </div>
+                                        <div style={{ color: colors.textDim, fontSize: '10px', lineHeight: '1.6' }}>
+                                            İstek Analizi → Tasarım Stratejisi → Mühendislik Detayı → CAD Özellik Planlama → CAD Çizim → JSON Doğrulama
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Disabled State Info */}
+                            {!useMultiAgent && (
+                                <div style={{ textAlign: 'center', padding: '40px 20px', color: colors.textDim }}>
+                                    <span className="material-icons" style={{ fontSize: '48px', color: colors.border, marginBottom: '12px', display: 'block' }}>hub</span>
+                                    <p style={{ margin: 0, fontSize: '12px' }}>Multi-Agent modu kapalı.</p>
+                                    <p style={{ margin: '8px 0 0 0', fontSize: '11px' }}>Tek model kullanmak için "AI / TEK MODEL" sekmesini kullanın.</p>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>

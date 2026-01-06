@@ -3,6 +3,8 @@ import './StatusBar.css';
 import { useDrawing } from '../../context/DrawingContext';
 import { getUnitLabel } from '../../utils/unitConversion';
 import ApplicationSettingsDialog from '../Dialogs/ApplicationSettingsDialog';
+import AgentHistoryDialog from '../Dialogs/AgentHistoryDialog';
+import ApplicationMenuDialog from '../Dialogs/ApplicationMenuDialog';
 
 const StatusBar = () => {
     const {
@@ -17,6 +19,8 @@ const StatusBar = () => {
     const [x, y] = cursorPosition;
     const [showPolarMenu, setShowPolarMenu] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     const units = ['mm', 'cm', 'm'] as const;
     const polarAngles = [15, 30, 45, 60, 90];
@@ -33,6 +37,13 @@ const StatusBar = () => {
                 <div className="status-coords">
                     <span>{x.toFixed(4)}, {y.toFixed(4)}, 0.0000</span>
                 </div>
+                <div className="status-separator"></div>
+
+                {/* Apps Menu Button */}
+                <span className="status-icon-btn" onClick={() => setIsMenuOpen(true)} title="Uygulama Menüsü">
+                    <span className="material-icons" style={{ color: '#4cc2ff' }}>apps</span>
+                </span>
+
                 <div className="status-separator"></div>
                 <span className={`status-icon-btn ${gridEnabled ? 'tool-active' : ''}`} onClick={toggleGrid} title="Grid (F7)">
                     <span className="material-icons">grid_on</span>
@@ -87,12 +98,16 @@ const StatusBar = () => {
                 {selectedIds.size > 0 && <span className="selection-count">{selectedIds.size} selected</span>}
             </div>
             <div className="status-right">
+                <span className="status-icon-btn" onClick={() => setIsHistoryOpen(true)} title="Agent History">
+                    <span className="material-icons" style={{ fontSize: '16px' }}>history</span>
+                </span>
                 <span className="status-icon-btn" onClick={() => setIsSettingsOpen(true)} title="Settings">
                     <span className="material-icons">settings</span>
                 </span>
-                <span className="status-icon-btn"><span className="material-icons">list</span></span>
             </div>
             <ApplicationSettingsDialog isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+            <AgentHistoryDialog isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} />
+            <ApplicationMenuDialog isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} />
         </div>
     );
 };
