@@ -40,7 +40,7 @@ const StatusBar = () => {
                 <div className="status-separator"></div>
 
                 {/* Apps Menu Button */}
-                <span className="status-icon-btn" onClick={() => setIsMenuOpen(true)} title="Uygulama Menüsü">
+                <span className="status-icon-btn" onClick={() => setIsMenuOpen(true)} title="Apps Menu">
                     <span className="material-icons" style={{ color: '#4cc2ff' }}>apps</span>
                 </span>
 
@@ -90,7 +90,7 @@ const StatusBar = () => {
                 <span
                     className="status-unit-btn"
                     onClick={cycleUnit}
-                    title="Birim Değiştir"
+                    title="Switch Unit"
                 >
                     {getUnitLabel(drawingUnit).toUpperCase()}
                 </span>

@@ -53,17 +53,17 @@ export interface AIGenerationResult {
 // MULTI-AGENT SYSTEM TYPES
 // =====================================================
 
-// Ajan tipleri
+// Agent types
 export type AgentType =
-    | 'requestAnalyzer'    // İstek Analizi (Intent)
-    | 'structureAgent'     // Yapı Analizi (Structure) - ESKİ ADI: designStrategy
-    | 'engineeringDetail'  // Mühendislik Detayı (Specler)
-    | 'geometryGenerator'  // Geometri Hesaplayıcı (Geometry)
-    | 'cadFeaturePlanner'  // CAD Özellik Eşleştirici (Feature Mapping)
-    | 'compilerAgent'      // CAD Derleyici (Compiler) - ESKİ ADI: cadDrawing
-    | 'validationAgent';   // Doğrulama (Validation) - ESKİ ADI: jsonValidator
+    | 'requestAnalyzer'    // Intent Analysis
+    | 'structureAgent'     // Structure Analysis
+    | 'engineeringDetail'  // Engineering Detail
+    | 'geometryGenerator'  // Geometry Calculator
+    | 'cadFeaturePlanner'  // CAD Any Feature Mapping
+    | 'compilerAgent'      // CAD Compiler
+    | 'validationAgent';   // Validation
 
-// Ajan konfigürasyonu
+// Agent configuration
 export interface AgentConfig {
     model: string;
     temperature: number;
@@ -71,7 +71,7 @@ export interface AgentConfig {
     enabled: boolean;
 }
 
-// Tüm ajanların konfigürasyonu
+// Configuration for all agents
 export interface AgentsConfiguration {
     requestAnalyzer: AgentConfig;
     structureAgent: AgentConfig;
@@ -82,7 +82,7 @@ export interface AgentsConfiguration {
     validationAgent: AgentConfig;
 }
 
-// Ajan çalışma sonucu
+// Agent execution result
 export interface AgentResult {
     agent: AgentType;
     success: boolean;
@@ -93,7 +93,7 @@ export interface AgentResult {
     userPrompt?: string;
 }
 
-// Orkestrasyon sonucu
+// Orchestration result
 export interface OrchestrationResult {
     success: boolean;
     entities: any[];
@@ -102,8 +102,7 @@ export interface OrchestrationResult {
     warnings?: string[];
 }
 
-// Varsayılan ücretsiz model tanımları
-// Varsayılan ücretsiz model tanımları
+// Default free model definitions
 export const DEFAULT_FREE_MODELS: Record<AgentType, string> = {
     requestAnalyzer: 'google/gemini-2.0-flash-exp:free',
     structureAgent: 'google/gemini-2.0-flash-exp:free', // Structure decomposition
@@ -114,11 +113,11 @@ export const DEFAULT_FREE_MODELS: Record<AgentType, string> = {
     validationAgent: 'meta-llama/llama-3.3-70b-instruct:free' // Deep logic check
 };
 
-// Varsayılan ajan konfigürasyonları
+// Default agent configurations
 export const DEFAULT_AGENT_CONFIGS: AgentsConfiguration = {
     requestAnalyzer: {
         model: DEFAULT_FREE_MODELS.requestAnalyzer,
-        temperature: 0.1, // Daha deterministik
+        temperature: 0.1, // More deterministic
         maxTokens: 700,
         enabled: true
     },
@@ -137,7 +136,7 @@ export const DEFAULT_AGENT_CONFIGS: AgentsConfiguration = {
     geometryGenerator: {
         model: DEFAULT_FREE_MODELS.geometryGenerator,
         temperature: 0.1,
-        maxTokens: 2000, // Koordinatlar uzun olabilir
+        maxTokens: 2000, // Coordinates can be long
         enabled: true
     },
     cadFeaturePlanner: {
@@ -148,7 +147,7 @@ export const DEFAULT_AGENT_CONFIGS: AgentsConfiguration = {
     },
     compilerAgent: {
         model: DEFAULT_FREE_MODELS.compilerAgent,
-        temperature: 0, // KESİNLİKLE 0 OLMALI (Strict)
+        temperature: 0, // MUST BE 0 (Strict)
         maxTokens: 4000,
         enabled: true
     },
@@ -160,41 +159,41 @@ export const DEFAULT_AGENT_CONFIGS: AgentsConfiguration = {
     }
 };
 
-// Ajan açıklamaları (UI için)
+// Agent descriptions (for UI)
 export const AGENT_DESCRIPTIONS: Record<AgentType, { name: string; description: string; icon: string }> = {
     requestAnalyzer: {
-        name: 'Niyet Analizi (Intent)',
-        description: 'Kullanıcının ne çizmek istediğini anlar',
+        name: 'Intent Analysis',
+        description: 'Understands what the user wants to draw',
         icon: 'psychology'
     },
     structureAgent: {
-        name: 'Yapı Analizi (Structure)',
-        description: 'Yapıyı standart bileşenlerine ayırır',
+        name: 'Structure Analysis',
+        description: 'Breaks down structure into standard components',
         icon: 'account_tree'
     },
     engineeringDetail: {
-        name: 'Mühendislik Detayı',
-        description: 'Her bileşen için teknik ölçüleri belirler',
+        name: 'Engineering Detail',
+        description: 'Determines technical dimensions for each component',
         icon: 'engineering'
     },
     geometryGenerator: {
-        name: 'Geometri Hesaplayıcı',
-        description: 'Ölçüleri gerçek koordinatlara dönüştürür',
+        name: 'Geometry Calculator',
+        description: 'Converts dimensions into real coordinates',
         icon: 'square_foot'
     },
     cadFeaturePlanner: {
-        name: 'CAD Eşleştirici',
-        description: 'Geometriyi CAD entitylerine çevirir',
+        name: 'CAD Feature Mapper',
+        description: 'Maps geometry to CAD entities',
         icon: 'layers'
     },
     compilerAgent: {
-        name: 'CAD Derleyici (Compiler)',
-        description: 'Final JSON çıktısını üretir (Strict)',
+        name: 'CAD Compiler',
+        description: 'Generates final JSON output (Strict)',
         icon: 'terminal'
     },
     validationAgent: {
-        name: 'Mühendislik Kontrolü',
-        description: 'Mantık ve fizik hatalarını denetler',
+        name: 'Engineering Check',
+        description: 'Validates logic and physics constraints',
         icon: 'fact_check'
     }
 };

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Line, Text } from '@react-three/drei';
 import { useDrawing } from '../../context/DrawingContext';
@@ -199,6 +200,9 @@ const ArrowRenderer = ({ coords, color, tip }: { coords: ArrowCoords; color: str
 };
 
 const SnapMarker = ({ point, type }: { point: Point, type: string }) => {
+    const { camera } = useThree();
+    const orthoCamera = camera as THREE.OrthographicCamera;
+
     // Farklı snap türleri için farklı renkler
     const getSnapColor = () => {
         switch (type) {
@@ -212,13 +216,14 @@ const SnapMarker = ({ point, type }: { point: Point, type: string }) => {
     };
 
     const color = getSnapColor();
-    const size = 0.8;
+    // Snap marker boyutunu zoom'a göre ayarla (ekranda yaklaşık 20 piksel kalsın)
+    const size = 10 / orthoCamera.zoom;
 
     return (
         <group position={[point[0], point[1], 0.2]}>
             {/* Dış kutu çerçevesi */}
             <mesh rotation={[0, 0, Math.PI / 4]}>
-                <ringGeometry args={[size * 0.7, size, 4]} />
+                <ringGeometry args={[size * 0.6, size, 4]} />
                 <meshBasicMaterial color={color} depthTest={false} />
             </mesh>
             {/* İç dolgu */}
@@ -231,16 +236,21 @@ const SnapMarker = ({ point, type }: { point: Point, type: string }) => {
 };
 
 const Grip = ({ point, isActive, onActivate }: { point: Point, isActive: boolean, onActivate: () => void }) => {
+    const { camera } = useThree();
+    const orthoCamera = camera as THREE.OrthographicCamera;
     const [isHovered, setIsHovered] = React.useState(false);
 
     // Renk belirleme: aktif = kırmızı, hover = turuncu, normal = mavi
     const color = isActive ? "#ff0000" : isHovered ? "#ff6600" : "#0078d4";
-    const scale = isHovered || isActive ? 1.3 : 1;
+
+    // Görsel boyutu sabit tutmak için (8 birim / zoom)
+    const baseSize = 8 / orthoCamera.zoom;
+    const hoverScale = isHovered || isActive ? 1.5 : 1;
 
     return (
         <mesh
             position={[point[0], point[1], 0.5]}
-            scale={[scale, scale, 1]}
+            scale={[hoverScale, hoverScale, 1]}
             onPointerDown={(e) => {
                 e.stopPropagation();
                 onActivate();
@@ -254,7 +264,7 @@ const Grip = ({ point, isActive, onActivate }: { point: Point, isActive: boolean
                 document.body.style.cursor = 'default';
             }}
         >
-            <boxGeometry args={[4.0, 4.0, 0.1]} />
+            <boxGeometry args={[baseSize, baseSize, 0.1]} />
             <meshBasicMaterial color={color} depthTest={false} />
         </mesh>
     );
@@ -300,12 +310,13 @@ const SelectionBoxRenderer = ({ selectionBox }: { selectionBox: any }) => {
 };
 
 // Custom component for hatch mesh with proper UV mapping
-const HatchMesh = React.memo(({ shape, pattern, color, scale = 1, rotation = 0 }: {
+const HatchMesh = React.memo(({ shape, pattern, color, scale = 1, rotation = 0, opacity = 1 }: {
     shape: THREE.Shape,
     pattern: string,
     color: string,
     scale: number,
-    rotation: number
+    rotation: number,
+    opacity?: number
 }) => {
     const textureUrl = pattern === 'SOLID' ? null : getPatternTexture(pattern || 'ANSI31', color);
 
@@ -362,14 +373,14 @@ const HatchMesh = React.memo(({ shape, pattern, color, scale = 1, rotation = 0 }
     if (pattern === 'SOLID' || !textureUrl) {
         return (
             <mesh position={[0, 0, -0.01]} geometry={geometry}>
-                <meshBasicMaterial color={color} transparent opacity={0.5} side={THREE.DoubleSide} />
+                <meshBasicMaterial color={color} transparent opacity={opacity} side={THREE.DoubleSide} />
             </mesh>
         );
     }
 
     return (
         <mesh position={[0, 0, -0.01]} geometry={geometry}>
-            <meshBasicMaterial map={texture} color="white" transparent opacity={0.8} side={THREE.DoubleSide} />
+            <meshBasicMaterial map={texture} color="white" transparent opacity={opacity} side={THREE.DoubleSide} />
         </mesh>
     );
 });
@@ -609,13 +620,29 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected, isHovered }: Entit
 
         return (
             <group onClick={handleEntityClick}>
+                {/* Hatch fill - always use original color to prevent texture reload */}
                 <HatchMesh
                     shape={shape}
                     pattern={pattern.name || 'ANSI31'}
-                    color={displayColor}
+                    color={ent.color || '#ffffff'}
                     scale={scale}
                     rotation={rotation}
+                    opacity={ent.opacity ?? 1}
                 />
+                {/* Selection overlay - semi-transparent blue fill over the hatch area */}
+                {isSelected && (
+                    <mesh position={[0, 0, 0.01]}>
+                        <shapeGeometry args={[shape]} />
+                        <meshBasicMaterial color="#0078d4" transparent opacity={0.3} side={THREE.DoubleSide} />
+                    </mesh>
+                )}
+                {/* Hover overlay - semi-transparent cyan */}
+                {isHovered && !isSelected && (
+                    <mesh position={[0, 0, 0.01]}>
+                        <shapeGeometry args={[shape]} />
+                        <meshBasicMaterial color="#00d4ff" transparent opacity={0.2} side={THREE.DoubleSide} />
+                    </mesh>
+                )}
             </group>
         );
     }
@@ -1094,36 +1121,46 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected, isHovered }: Entit
 
     return null;
 }, (prevProps, nextProps) => {
-    // Custom comparison for better memoization
-    return prevProps.entity === nextProps.entity && prevProps.isSelected === nextProps.isSelected;
+    // Custom comparison for better memoization - compare entity by id, not reference
+    return prevProps.entity.id === nextProps.entity.id &&
+        prevProps.entity.color === nextProps.entity.color &&
+        prevProps.isSelected === nextProps.isSelected &&
+        prevProps.isHovered === nextProps.isHovered;
 });
 
 EntityRenderer.displayName = 'EntityRenderer';
 
 const EntitiesRenderer = React.memo(() => {
-    const { entities, tempPoints, activeCommand, cursorPosition, step, selectedIds, commandState, activeSnap, activateGrip, activeGrip, selectionBox, hoveredEntityId, layers } = useDrawing();
+    const { camera } = useThree();
+    const { entities, tempPoints, activeCommand, cursorPosition, step, selectedIds, commandState, activeSnap, activateGrip, activeGrip, selectionBox, hoveredEntityId, layers, alignmentGuides } = useDrawing();
 
-    // Memoize entity list rendering
-    const entityList = useMemo(() => {
+    // Memoize entity base list (without selection state) - only recalculates when entities or layers change
+    const entityBaseList = useMemo(() => {
         return entities.map(ent => {
             const layer = layers.find(l => l.id === ent.layer) || DEFAULT_LAYER;
             if (!layer.visible) return null;
 
             // Resolve color: if entity color is missing or 'BYLAYER', use layer color
-            const displayEntity = (!ent.color || ent.color === 'BYLAYER')
-                ? { ...ent, color: layer.color }
-                : ent;
+            const displayColor = (!ent.color || ent.color === 'BYLAYER') ? layer.color : ent.color;
 
-            return (
-                <EntityRenderer
-                    key={ent.id}
-                    entity={displayEntity}
-                    isSelected={selectedIds.has(ent.id)}
-                    isHovered={hoveredEntityId === ent.id && !selectedIds.has(ent.id)}
-                />
-            );
-        });
-    }, [entities, selectedIds, hoveredEntityId, layers]);
+            return { ent, displayColor, layerVisible: true };
+        }).filter(Boolean) as { ent: Entity; displayColor: string; layerVisible: boolean }[];
+    }, [entities, layers]);
+
+    // Render entity list - selection state is passed as props (EntityRenderer handles memoization)
+    const entityList = entityBaseList.map(({ ent, displayColor }) => {
+        // Use stable entity reference with computed color
+        const displayEntity = ent.color === displayColor ? ent : { ...ent, color: displayColor };
+
+        return (
+            <EntityRenderer
+                key={ent.id}
+                entity={displayEntity}
+                isSelected={selectedIds.has(ent.id)}
+                isHovered={hoveredEntityId === ent.id && !selectedIds.has(ent.id)}
+            />
+        );
+    });
 
     // Memoize grips rendering
     const gripsElements = useMemo(() => {
@@ -1376,6 +1413,66 @@ const EntitiesRenderer = React.memo(() => {
                         </>
                     )}
                 </>
+            )}
+
+            {/* Alignment Guides (Smart Guides) */}
+            {alignmentGuides.x && (
+                <group>
+                    {/* Vertical Line */}
+                    <Line
+                        points={[[alignmentGuides.x.value, cursorPosition[1] - 1000, 0], [alignmentGuides.x.value, cursorPosition[1] + 1000, 0]]}
+                        color="#00ff00"
+                        lineWidth={1}
+                        dashed
+                        dashScale={20}
+                        opacity={0.6}
+                        transparent
+                    />
+                    {/* Source Point Marker (+) - scaled by zoom */}
+                    <Line
+                        points={[
+                            [alignmentGuides.x.point[0] - (5 / camera.zoom), alignmentGuides.x.point[1], 0],
+                            [alignmentGuides.x.point[0] + (5 / camera.zoom), alignmentGuides.x.point[1], 0]
+                        ]}
+                        color="#00ff00" lineWidth={2}
+                    />
+                    <Line
+                        points={[
+                            [alignmentGuides.x.point[0], alignmentGuides.x.point[1] - (5 / camera.zoom), 0],
+                            [alignmentGuides.x.point[0], alignmentGuides.x.point[1] + (5 / camera.zoom), 0]
+                        ]}
+                        color="#00ff00" lineWidth={2}
+                    />
+                </group>
+            )}
+            {alignmentGuides.y && (
+                <group>
+                    {/* Horizontal Line */}
+                    <Line
+                        points={[[cursorPosition[0] - 1000, alignmentGuides.y.value, 0], [cursorPosition[0] + 1000, alignmentGuides.y.value, 0]]}
+                        color="#00ff00"
+                        lineWidth={1}
+                        dashed
+                        dashScale={20}
+                        opacity={0.6}
+                        transparent
+                    />
+                    {/* Source Point Marker (+) - scaled by zoom */}
+                    <Line
+                        points={[
+                            [alignmentGuides.y.point[0] - (5 / camera.zoom), alignmentGuides.y.point[1], 0],
+                            [alignmentGuides.y.point[0] + (5 / camera.zoom), alignmentGuides.y.point[1], 0]
+                        ]}
+                        color="#00ff00" lineWidth={2}
+                    />
+                    <Line
+                        points={[
+                            [alignmentGuides.y.point[0], alignmentGuides.y.point[1] - (5 / camera.zoom), 0],
+                            [alignmentGuides.y.point[0], alignmentGuides.y.point[1] + (5 / camera.zoom), 0]
+                        ]}
+                        color="#00ff00" lineWidth={2}
+                    />
+                </group>
             )}
 
             {activeCommand === 'ROTATE' && step === 3 && commandState.base && (

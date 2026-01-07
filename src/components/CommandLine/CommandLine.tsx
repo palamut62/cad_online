@@ -251,7 +251,7 @@ const CommandLine = () => {
                             value={aiInput}
                             onChange={(e) => setAiInput(e.target.value)}
                             className="command-input"
-                            placeholder="Doğal dil ile çizim yapın..."
+                            placeholder="Draw with natural language..."
                             style={{ caretColor: '#4cc2ff', color: '#999', fontSize: '11px' }}
                         />
                         <div style={{
@@ -308,10 +308,10 @@ const CommandLine = () => {
                                         )}
                                     </div>
                                 ) : (
-                                    <span style={{ color: '#888', opacity: 0.5, fontSize: '8px' }}>Tek Model</span>
+                                    <span style={{ color: '#888', opacity: 0.5, fontSize: '8px' }}>Single Model</span>
                                 )
                             ) : (
-                                <span style={{ color: '#ff6b6b', opacity: 0.7, fontSize: '8px' }}>API Key Yok</span>
+                                <span style={{ color: '#ff6b6b', opacity: 0.7, fontSize: '8px' }}>No API Key</span>
                             )}
                         </div>
                     </div>
@@ -335,7 +335,7 @@ const CommandLine = () => {
                     }}>
                         <span className="material-icons" style={{ fontSize: '16px', marginTop: '1px' }}>error_outline</span>
                         <div style={{ flex: 1, wordBreak: 'break-word', fontFamily: 'Consolas, monospace' }}>
-                            <div style={{ fontWeight: 600, marginBottom: '2px' }}>AI Hatası:</div>
+                            <div style={{ fontWeight: 600, marginBottom: '2px' }}>AI Error:</div>
                             {aiError}
                         </div>
                         <button
@@ -355,7 +355,7 @@ const CommandLine = () => {
                                 transition: 'all 0.2s',
                                 opacity: 0.8
                             }}
-                            title="Hatayı Kopyala"
+                            title="Copy Error"
                         >
                             <span className="material-icons" style={{ fontSize: '14px' }}>content_copy</span>
                         </button>

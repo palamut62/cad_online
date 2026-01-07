@@ -12,6 +12,7 @@ import { useDrawing } from '../../context/DrawingContext';
 import { parseDxf } from '../../utils/dxfLoader';
 import { exportDXF } from '../../utils/dxfExporter';
 import { PRESET_PATTERNS, PATTERN_CATEGORIES, getPatternPreview } from '../../utils/hatchPatterns';
+import HatchDialog, { HatchParams } from '../Dialogs/HatchDialog';
 
 // Helper Component for Visual Line Type Selection
 // Helper Component for Visual Line Type Selection
@@ -20,13 +21,13 @@ const LineTypeSelector = ({ value, onChange }: { value: string, onChange: (val: 
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     const options = [
-        { value: 'continuous', label: 'Sürekli', pattern: 'solid' },
-        { value: 'dashed', label: 'Kesik', pattern: 'dashed' },
-        { value: 'dotted', label: 'Noktalı', pattern: 'dotted' },
-        { value: 'dashdot', label: 'Kesik-Nokta', pattern: 'dashed' },
-        { value: 'center', label: 'Merkez', pattern: 'dashed' },
-        { value: 'hidden', label: 'Gizli', pattern: 'dashed' },
-        { value: 'phantom', label: 'Hayalet', pattern: 'dashed' },
+        { value: 'continuous', label: 'Continuous', pattern: 'solid' },
+        { value: 'dashed', label: 'Dashed', pattern: 'dashed' },
+        { value: 'dotted', label: 'Dotted', pattern: 'dotted' },
+        { value: 'dashdot', label: 'Dash-Dot', pattern: 'dashed' },
+        { value: 'center', label: 'Center', pattern: 'dashed' },
+        { value: 'hidden', label: 'Hidden', pattern: 'dashed' },
+        { value: 'phantom', label: 'Phantom', pattern: 'dashed' },
     ];
 
     const renderPreview = (type: string) => {
@@ -156,8 +157,23 @@ const LineWeightSelector = ({ value, onChange }: { value: number, onChange: (val
 const Ribbon = () => {
     const [activeTab, setActiveTab] = useState<string>('Home');
     const [dwgWarning, setDwgWarning] = useState<boolean>(false);
+    const [hatchDialogOpen, setHatchDialogOpen] = useState<boolean>(false);
+    const [hatchEditMode, setHatchEditMode] = useState<boolean>(false);
+    const [editingHatchId, setEditingHatchId] = useState<number | null>(null);
+    const [hatchParams, setHatchParams] = useState<HatchParams>({
+        pattern: 'ANSI31',
+        color: '#808080',
+        scale: 1,
+        rotation: 0,
+        opacity: 1
+    });
+
+    // Auto-reopen dialog logic
+    const [waitingForHatch, setWaitingForHatch] = useState<boolean>(false);
+    const prevEntitiesCount = useRef<number>(0);
+
     const {
-        startCommand, selectedIds, updateEntity, activeCommand, setCommandState, commandState, getEntity,
+        startCommand, selectedIds, updateEntity, updateEntityTransient, activeCommand, setCommandState, commandState, getEntity,
         entities, fileName, isModified, newFile, loadEntities, addSheet,
         baseUnit, setBaseUnit, drawingUnit, setDrawingUnit, drawingScale, setDrawingScale,
         triggerZoomToFit, triggerZoomIn, triggerZoomOut, startZoomWindow, zoomWindowMode,
@@ -168,22 +184,26 @@ const Ribbon = () => {
     } = useDrawing();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Hatch Context
-    const selectedHatchId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
-    const selectedHatch = selectedHatchId ? getEntity(selectedHatchId) : null;
-    const isHatchSelected = selectedHatch?.type === 'HATCH';
-    const isHatchCommand = activeCommand === 'HATCH';
-    const showHatchTab = isHatchSelected || isHatchCommand;
+    // Hatch Context - memoized to prevent unnecessary re-renders
+    const hatchContext = useMemo(() => {
+        const selectedHatchId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
+        const selectedHatch = selectedHatchId ? entities.find(e => e.id === selectedHatchId) : null;
+        const isHatchSelected = selectedHatch?.type === 'HATCH';
+        const isHatchCommand = activeCommand === 'HATCH';
+        const showHatchTab = isHatchSelected || isHatchCommand;
+        return { selectedHatchId, selectedHatch, isHatchSelected, isHatchCommand, showHatchTab };
+    }, [selectedIds, entities, activeCommand]);
 
-    // Auto-switch to Hatch Editor tab when a hatch is selected OR hatch command is active
-    useEffect(() => {
-        if (isHatchSelected || (isHatchCommand && !isHatchSelected)) {
-            setActiveTab('Hatch Editor');
-        } else if (activeTab === 'Hatch Editor' && !isHatchCommand && !isHatchSelected) {
-            // If we deselected hatch and not in hatch command, go back to Home
-            setActiveTab('Home');
-        }
-    }, [isHatchSelected, isHatchCommand]);
+    const { selectedHatchId, selectedHatch, isHatchSelected, isHatchCommand, showHatchTab } = hatchContext;
+
+    // Hatch tab auto-switch disabled - using dialog instead
+    // useEffect(() => {
+    //     if ((isHatchSelected || isHatchCommand) && activeTab !== 'Hatch') {
+    //         setActiveTab('Hatch');
+    //     } else if (activeTab === 'Hatch' && !isHatchCommand && !isHatchSelected) {
+    //         setActiveTab('Home');
+    //     }
+    // }, [isHatchSelected, isHatchCommand, activeTab]);
 
     // Pattern kategorileri için gruplandırma (useMemo hook'u component seviyesinde olmalı)
     const patternsByCategory = useMemo(() => {
@@ -328,17 +348,117 @@ const Ribbon = () => {
         }
     };
 
+    // Watch for new hatch entity creation
+    useEffect(() => {
+        if (waitingForHatch && entities.length > prevEntitiesCount.current) {
+            const lastEntity = entities[entities.length - 1];
+            // Check if last entity is HATCH
+            if (lastEntity.type === 'HATCH') {
+                // Use setTimeout to ensure render cycle completes and ID is stable
+                setTimeout(() => {
+                    // Open dialog in edit mode for this new hatch
+                    const hatch = lastEntity as any;
+                    setHatchParams({
+                        pattern: hatch.pattern?.name || 'ANSI31',
+                        color: hatch.color || '#808080',
+                        scale: hatch.scale || 1,
+                        rotation: hatch.rotation || 0,
+                        opacity: hatch.opacity ?? 1
+                    });
+                    setEditingHatchId(lastEntity.id);
+                    setHatchEditMode(true);
+                    setHatchDialogOpen(true);
+                    setWaitingForHatch(false); // Reset waiting flag
+                }, 100);
+            }
+        }
+        prevEntitiesCount.current = entities.length;
+    }, [entities, waitingForHatch]);
+
+    // HATCH dialog apply handler
+    const handleHatchApply = (params: HatchParams) => {
+        setHatchParams(params);
+        setHatchDialogOpen(false);
+        setHatchEditMode(false);
+        setEditingHatchId(null);
+        setWaitingForHatch(true); // Start waiting for hatch creation
+
+        // Set hatch parameters in command state and start HATCH command
+        const patternConfig = PRESET_PATTERNS[params.pattern];
+        setCommandState({
+            hatchParams: {
+                pattern: {
+                    name: params.pattern,
+                    type: patternConfig?.type || 'lines',
+                    angle: patternConfig?.angle || 45
+                },
+                color: params.color,
+                scale: params.scale,
+                rotation: params.rotation,
+                opacity: params.opacity
+            }
+        });
+        startCommand('HATCH');
+    };
+
+    // Handle updating an existing hatch entity (Live Update)
+    const handleHatchLiveUpdate = (entityId: number, params: HatchParams) => {
+        const patternConfig = PRESET_PATTERNS[params.pattern];
+        updateEntityTransient(entityId, {
+            pattern: {
+                name: params.pattern,
+                type: patternConfig?.type || 'lines',
+                angle: patternConfig?.angle || 45
+            },
+            color: params.color,
+            scale: params.scale,
+            rotation: params.rotation,
+            opacity: params.opacity
+        });
+    };
+
+    // Handle updating an existing hatch entity (Final / Close)
+    const handleHatchUpdate = (_entityId: number, _params: HatchParams) => {
+        setHatchDialogOpen(false);
+        setHatchEditMode(false);
+        setEditingHatchId(null);
+    };
+
+    // Open HATCH dialog instead of directly starting command
+    const openHatchDialog = () => {
+        setHatchEditMode(false);
+        setEditingHatchId(null);
+        setHatchDialogOpen(true);
+    };
+
+    // Open HATCH dialog in edit mode for selected hatch (can be used with double-click or context menu)
+    // const openHatchEditDialog = () => {
+    //     if (isHatchSelected && selectedHatchId) {
+    //         const hatch = selectedHatch as any;
+    //         setHatchParams({
+    //             pattern: hatch.pattern?.name || 'ANSI31',
+    //             color: hatch.color || '#808080',
+    //             scale: hatch.scale || 1,
+    //             rotation: hatch.rotation || 0,
+    //             opacity: hatch.opacity ?? 1
+    //         });
+    //         setEditingHatchId(selectedHatchId);
+    //         setHatchEditMode(true);
+    //         setHatchDialogOpen(true);
+    //     }
+    // };
+
     const renderTabContent = () => {
         if (activeTab === 'File') {
             return (
                 <div className="ribbon-group">
                     <div className="ribbon-panel">
                         <div className="tool-grid">
-                            <button className="tool-btn" onClick={handleNewFile}><FaFile /> <span>Yeni</span></button>
-                            <button className="tool-btn" onClick={() => fileInputRef.current?.click()}><FaFolderOpen /> <span>Aç</span></button>
-                            <button className="tool-btn" onClick={handleCloseFile} title="Dosyayı kapat"><span className="material-icons" style={{ fontSize: '16px' }}>close</span> <span>Kapat</span></button>
-                            <button className="tool-btn" onClick={handleSave}><FaSave /> <span>Kaydet</span></button>
-                            <button className="tool-btn" onClick={handleSaveAs}><FaFileExport /> <span>Farklı</span></button>
+                            <button className="tool-btn" onClick={handleNewFile}><FaFile /> <span>New</span></button>
+                            <button className="tool-btn" onClick={() => fileInputRef.current?.click()}><FaFolderOpen /> <span>Open</span></button>
+                            <button className="tool-btn" onClick={handleCloseFile} title="Close file"><span className="material-icons" style={{ fontSize: '16px' }}>close</span> <span>Close</span></button>
+                            <button className="tool-btn" onClick={handleSave}><FaSave /> <span>Save</span></button>
+                            <button className="tool-btn" onClick={handleSaveAs}><FaFileExport /> <span>Save As</span></button>
                         </div>
                         <input
                             type="file"
@@ -347,34 +467,34 @@ const Ribbon = () => {
                             accept=".dxf,.dwg"
                             onChange={handleFileImport}
                         />
-                        <div className="panel-label">Dosya İşlemleri</div>
+                        <div className="panel-label">File Operations</div>
                     </div>
                     <div className="ribbon-panel">
                         <div className="tool-col" style={{ padding: '8px' }}>
                             <div style={{ fontSize: '11px', color: '#ccc' }}>
-                                <strong>Dosya:</strong> {fileName}
+                                <strong>File:</strong> {fileName}
                             </div>
                             <div style={{ fontSize: '11px', color: isModified ? '#ffcc00' : '#4caf50' }}>
-                                <strong>Durum:</strong> {isModified ? 'Değişiklik var' : 'Kaydedildi'}
+                                <strong>Status:</strong> {isModified ? 'Modified' : 'Saved'}
                             </div>
                             <div style={{ fontSize: '11px', color: '#ccc' }}>
-                                <strong>Nesne:</strong> {entities.length}
+                                <strong>Entities:</strong> {entities.length}
                             </div>
                         </div>
-                        <div className="panel-label">Dosya Bilgisi</div>
+                        <div className="panel-label">File Info</div>
                     </div>
                     <div className="ribbon-panel">
                         <div className="tool-col" style={{ padding: '8px', fontSize: '10px', color: '#aaa' }}>
                             <div>✓ DXF (AutoCAD)</div>
-                            <div style={{ color: '#ff9800' }}>⚠ DWG (DXF'e dönüştür)</div>
+                            <div style={{ color: '#ff9800' }}>⚠ DWG (Convert to DXF)</div>
                         </div>
-                        <div className="panel-label">Formatlar</div>
+                        <div className="panel-label">Formats</div>
                     </div>
                 </div>
             );
         }
 
-        if (activeTab === 'Hatch Editor' && showHatchTab) {
+        if (activeTab === 'Hatch' && showHatchTab) {
             const currentPattern = isHatchSelected
                 ? (selectedHatch as any).pattern?.name || 'ANSI31'
                 : commandState.hatchParams?.pattern?.name || 'ANSI31';
@@ -399,7 +519,7 @@ const Ribbon = () => {
                 <div className="ribbon-group hatch-editor-group">
                     {/* Pattern Galerisi */}
                     <div className="ribbon-panel hatch-pattern-panel">
-                        <div className="panel-label">Doku Seçimi</div>
+                        <div className="panel-label">Pattern Selection</div>
                         <div className="hatch-categories">
                             {Object.entries(PATTERN_CATEGORIES).map(([catKey, catInfo]) => (
                                 <div key={catKey} className="hatch-category">
@@ -411,7 +531,7 @@ const Ribbon = () => {
                                         {patternsByCategory[catKey]?.map(patternKey => {
                                             const pattern = PRESET_PATTERNS[patternKey];
                                             const isSelected = currentPattern === patternKey;
-                                            const preview = getPatternPreview(patternKey, 28);
+                                            const preview = getPatternPreview(patternKey, 32);
                                             return (
                                                 <button
                                                     key={patternKey}
@@ -435,10 +555,10 @@ const Ribbon = () => {
 
                     {/* Renk ve Opaklık */}
                     <div className="ribbon-panel hatch-color-panel">
-                        <div className="panel-label">Renk & Opaklık</div>
+                        <div className="panel-label">Color & Opacity</div>
                         <div className="hatch-color-controls">
                             <div className="color-picker-row">
-                                <label>Renk:</label>
+                                <label>Color:</label>
                                 <input
                                     type="color"
                                     value={currentColor}
@@ -448,7 +568,7 @@ const Ribbon = () => {
                                 <span className="color-hex">{currentColor}</span>
                             </div>
                             <div className="opacity-row">
-                                <label>Opaklık:</label>
+                                <label>Opacity:</label>
                                 <input
                                     type="range"
                                     min="0"
@@ -456,18 +576,19 @@ const Ribbon = () => {
                                     value={currentOpacity}
                                     onChange={(e) => updateHatchState('opacity', parseInt(e.target.value) / 100)}
                                     className="hatch-opacity-slider"
+                                    title={`Opacity: %${Math.round(currentOpacity)}`}
                                 />
-                                <span className="opacity-value">{Math.round(currentOpacity)}%</span>
+                                <span className="opacity-value">%{Math.round(currentOpacity)}</span>
                             </div>
                         </div>
                     </div>
 
                     {/* Ölçek ve Açı */}
                     <div className="ribbon-panel hatch-transform-panel">
-                        <div className="panel-label">Dönüşüm</div>
+                        <div className="panel-label">Transform</div>
                         <div className="hatch-transform-controls">
                             <div className="transform-row">
-                                <label>Ölçek:</label>
+                                <label>Scale:</label>
                                 <input
                                     type="range"
                                     min="0.1"
@@ -488,7 +609,7 @@ const Ribbon = () => {
                                 />
                             </div>
                             <div className="transform-row">
-                                <label>Açı:</label>
+                                <label>Angle:</label>
                                 <input
                                     type="range"
                                     min="0"
@@ -514,7 +635,7 @@ const Ribbon = () => {
 
                     {/* Seçili Pattern Bilgisi */}
                     <div className="ribbon-panel hatch-info-panel">
-                        <div className="panel-label">Seçili Doku</div>
+                        <div className="panel-label">Selected Pattern</div>
                         <div className="hatch-info">
                             <div className="selected-pattern-preview">
                                 <img
@@ -523,8 +644,8 @@ const Ribbon = () => {
                                     style={{
                                         width: 48,
                                         height: 48,
-                                        border: '2px solid #4cc2ff',
-                                        borderRadius: '4px'
+                                        border: '1px solid #ccc',
+                                        borderRadius: '2px'
                                     }}
                                 />
                             </div>
@@ -533,7 +654,7 @@ const Ribbon = () => {
                                     {PRESET_PATTERNS[currentPattern]?.name || currentPattern}
                                 </div>
                                 <div className="pattern-type-display">
-                                    Tip: {PRESET_PATTERNS[currentPattern]?.type}
+                                    Type: {PRESET_PATTERNS[currentPattern]?.type}
                                 </div>
                             </div>
                         </div>
@@ -550,38 +671,38 @@ const Ribbon = () => {
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className={`tool-btn ${activeCommand === 'LINE' ? 'active' : ''}`} onClick={() => startCommand('LINE')}>
-                                    <TbLine /> <span>Çizgi</span>
+                                    <TbLine /> <span>Line</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'POLYLINE' ? 'active' : ''}`} onClick={() => startCommand('POLYLINE')}>
-                                    <MdPolyline /> <span>PÇizgi</span>
+                                    <MdPolyline /> <span>Polyline</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'CIRCLE' ? 'active' : ''}`} onClick={() => startCommand('CIRCLE')}>
-                                    <FaRegCircle /> <span>Daire</span>
+                                    <FaRegCircle /> <span>Circle</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'ARC' ? 'active' : ''}`} onClick={() => startCommand('ARC')}>
-                                    <FaBezierCurve /> <span>Yay</span>
+                                    <FaBezierCurve /> <span>Arc</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'RECTANGLE' ? 'active' : ''}`} onClick={() => startCommand('RECTANGLE')}>
-                                    <FaRegSquare /> <span>Dikd.</span>
+                                    <FaRegSquare /> <span>Rect</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'HATCH' ? 'active' : ''}`} onClick={() => startCommand('HATCH')}>
-                                    <FaFillDrip /> <span>Tarama</span>
+                                <button className={`tool-btn ${activeCommand === 'HATCH' ? 'active' : ''}`} onClick={openHatchDialog}>
+                                    <FaFillDrip /> <span>Hatch</span>
                                 </button>
                                 {/* New Draw Tools */}
                                 <button className={`tool-btn ${activeCommand === 'ELLIPSE' ? 'active' : ''}`} onClick={() => startCommand('ELLIPSE')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>hdr_weak</span> <span>Elips</span>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>hdr_weak</span> <span>Ellipse</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'POLYGON' ? 'active' : ''}`} onClick={() => startCommand('POLYGON')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>pentagon</span> <span>Çokgen</span>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>pentagon</span> <span>Polygon</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'SPLINE' ? 'active' : ''}`} onClick={() => startCommand('SPLINE')}>
                                     <span className="material-icons" style={{ fontSize: '16px' }}>gesture</span> <span>Spline</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'POINT' ? 'active' : ''}`} onClick={() => startCommand('POINT')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>gps_fixed</span> <span>Nokta</span>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>gps_fixed</span> <span>Point</span>
                                 </button>
                             </div>
-                            <div className="panel-label">Çizim <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
+                            <div className="panel-label">Draw <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
                         </div>
 
                         {/* Modify Panel */}
@@ -591,72 +712,72 @@ const Ribbon = () => {
                                     <FaArrowsAlt /> <span>Taşı</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'COPY' ? 'active' : ''}`} onClick={() => startCommand('COPY')}>
-                                    <FaCopy /> <span>Kopyala</span>
+                                    <FaCopy /> <span>Copy</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'ROTATE' ? 'active' : ''}`} onClick={() => startCommand('ROTATE')}>
-                                    <FaRedo /> <span>Döndür</span>
+                                    <FaRedo /> <span>Rotate</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'MIRROR' ? 'active' : ''}`} onClick={() => startCommand('MIRROR')}>
-                                    <FaExchangeAlt /> <span>Aynala</span>
+                                    <FaExchangeAlt /> <span>Mirror</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'SCALE' ? 'active' : ''}`} onClick={() => startCommand('SCALE')}>
-                                    <FaExpand /> <span>Ölçek</span>
+                                    <FaExpand /> <span>Scale</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'TRIM' ? 'active' : ''}`} onClick={() => startCommand('TRIM')}>
-                                    <FaCut /> <span>Kırp</span>
+                                    <FaCut /> <span>Trim</span>
                                 </button>
                                 {/* New Modify Tools */}
                                 <button className={`tool-btn ${activeCommand === 'OFFSET' ? 'active' : ''}`} onClick={() => startCommand('OFFSET')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>content_copy</span> <span>Ötele</span>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>content_copy</span> <span>Offset</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'FILLET' ? 'active' : ''}`} onClick={() => startCommand('FILLET')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>rounded_corner</span> <span>Pah</span>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>rounded_corner</span> <span>Fillet</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'EXTEND' ? 'active' : ''}`} onClick={() => startCommand('EXTEND')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>last_page</span> <span>Uzat</span>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>last_page</span> <span>Extend</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'ARRAY' ? 'active' : ''}`} onClick={() => startCommand('ARRAY')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>grid_view</span> <span>Dizi</span>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>grid_view</span> <span>Array</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'ERASE' ? 'active' : ''}`} onClick={() => startCommand('ERASE')}>
-                                    <FaEraser /> <span>Sil</span>
+                                    <FaEraser /> <span>Erase</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'EXPLODE' ? 'active' : ''}`} onClick={() => startCommand('EXPLODE')}>
-                                    <FaObjectUngroup /> <span>Patlat</span>
+                                    <FaObjectUngroup /> <span>Explode</span>
                                 </button>
                             </div>
-                            <div className="panel-label">Düzenle <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
+                            <div className="panel-label">Modify <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
                         </div>
 
                         {/* Annotation Panel */}
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className={`tool-btn ${activeCommand === 'TEXT' ? 'active' : ''}`} onClick={() => startCommand('TEXT')}>
-                                    <FaFont /> <span>Metin</span>
+                                    <FaFont /> <span>Text</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'MTEXT' ? 'active' : ''}`} onClick={() => startCommand('MTEXT')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>text_fields</span> <span>Çoklu</span>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>text_fields</span> <span>MText</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMLINEAR' ? 'active' : ''}`} onClick={() => startCommand('DIMLINEAR')}>
-                                    <TbLine /> <span>Doğrus..</span>
+                                    <TbLine /> <span>Linear</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMALIGNED' ? 'active' : ''}`} onClick={() => startCommand('DIMALIGNED')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>straighten</span> <span>Hizalı</span>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>straighten</span> <span>Aligned</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMANGULAR' ? 'active' : ''}`} onClick={() => startCommand('DIMANGULAR')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>architecture</span> <span>Açı</span>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>architecture</span> <span>Angle</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMRADIUS' ? 'active' : ''}`} onClick={() => startCommand('DIMRADIUS')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>radio_button_checked</span> <span>Yarıçap</span>
+                                    <span className="material-icons" style={{ fontSize: '16px' }}>radio_button_checked</span> <span>Radius</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'TABLE' ? 'active' : ''}`} onClick={() => startCommand('TABLE')}>
-                                    <FaTable /> <span>Tablo</span>
+                                    <FaTable /> <span>Table</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'LEADER' ? 'active' : ''}`} onClick={() => startCommand('LEADER')}>
-                                    <FaProjectDiagram /> <span>Ok</span>
+                                    <FaProjectDiagram /> <span>Leader</span>
                                 </button>
                             </div>
-                            <div className="panel-label">Açıklama <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
+                            <div className="panel-label">Annotation <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
                         </div>
 
                         {/* Layers Panel (AutoCAD Style) */}
@@ -668,7 +789,7 @@ const Ribbon = () => {
                                     style={{ height: 'auto', minWidth: '60px' }}
                                 >
                                     <span className="material-icons" style={{ fontSize: '32px' }}>layers</span>
-                                    <span>KATMANLAR</span>
+                                    <span>LAYERS</span>
                                 </button>
                                 <div className="tool-col" style={{ justifyContent: 'center', gap: '4px', minWidth: '160px' }}>
                                     <div className="layer-selector-container">
@@ -686,13 +807,13 @@ const Ribbon = () => {
                                         </select>
                                     </div>
                                     <div style={{ display: 'flex', gap: '6px', paddingLeft: '4px' }}>
-                                        <button className="mini-icon-btn" title="Kapat/Aç"><span className="material-icons">lightbulb</span></button>
-                                        <button className="mini-icon-btn" title="Dondur"><span className="material-icons">ac_unit</span></button>
-                                        <button className="mini-icon-btn" title="Kilitle"><span className="material-icons">lock_open</span></button>
+                                        <button className="mini-icon-btn" title="On/Off"><span className="material-icons">lightbulb</span></button>
+                                        <button className="mini-icon-btn" title="Freeze"><span className="material-icons">ac_unit</span></button>
+                                        <button className="mini-icon-btn" title="Lock"><span className="material-icons">lock_open</span></button>
                                     </div>
                                 </div>
                             </div>
-                            <div className="panel-label">KATMANLAR</div>
+                            <div className="panel-label">LAYERS</div>
                         </div>
 
                         {/* Properties Panel (AutoCAD Style) */}
@@ -708,7 +829,7 @@ const Ribbon = () => {
                                                 backgroundColor: selectedIds.size > 0 ? (getEntity(Array.from(selectedIds)[0])?.color || '#fff') : '#4cc2ff',
                                                 border: '1px solid rgba(255,255,255,0.2)'
                                             }}></div>
-                                            <span className="property-val-label">RENK</span>
+                                            <span className="property-val-label">COLOR</span>
                                         </div>
                                         <input
                                             type="color"
@@ -731,7 +852,7 @@ const Ribbon = () => {
                                     onChange={(val) => changeProperty('lineWeight', val)}
                                 />
                             </div>
-                            <div className="panel-label">ÖZELLİKLER</div>
+                            <div className="panel-label">PROPERTIES</div>
                         </div>
                     </div>
                 );
@@ -761,23 +882,23 @@ const Ribbon = () => {
                                 <button
                                     className="tool-btn"
                                     onClick={() => triggerZoomIn()}
-                                    title="Yakınlaştır (+)"
+                                    title="Zoom In (+)"
                                 >
                                     <span className="material-icons">zoom_in</span>
-                                    <span>Yakın</span>
+                                    <span>In</span>
                                 </button>
                                 <button
                                     className="tool-btn"
                                     onClick={() => triggerZoomOut()}
-                                    title="Uzaklaştır (-)"
+                                    title="Zoom Out (-)"
                                 >
                                     <span className="material-icons">zoom_out</span>
-                                    <span>Uzak</span>
+                                    <span>Out</span>
                                 </button>
                                 <button
                                     className="tool-btn"
                                     onClick={() => triggerZoomToFit()}
-                                    title="Zoom Extents - Tüm çizimi ekrana sığdır (AutoCAD: ZOOM E)"
+                                    title="Zoom Extents (AutoCAD: ZOOM E)"
                                 >
                                     <span className="material-icons">zoom_out_map</span>
                                     <span>Extents</span>
@@ -785,19 +906,19 @@ const Ribbon = () => {
                                 <button
                                     className={`tool-btn ${zoomWindowMode ? 'active' : ''}`}
                                     onClick={() => startZoomWindow()}
-                                    title="Zoom Window - Pencere ile seçilen alanı yakınlaştır (AutoCAD: ZOOM W)"
+                                    title="Zoom Window (AutoCAD: ZOOM W)"
                                     style={zoomWindowMode ? { backgroundColor: '#4cc2ff', color: '#000' } : {}}
                                 >
                                     <span className="material-icons">crop_free</span>
                                     <span>Window</span>
                                 </button>
                             </div>
-                            <div className="panel-label">Yakınlaştır</div>
+                            <div className="panel-label">Zoom</div>
                         </div>
                         <div className="ribbon-panel">
                             <div className="tool-col compact">
                                 <div className="prop-row">
-                                    <span>Ölçek</span>
+                                    <span>Scale</span>
                                     <select
                                         value={drawingScale}
                                         onChange={(e) => setDrawingScale(e.target.value)}
@@ -818,17 +939,17 @@ const Ribbon = () => {
                                     </select>
                                 </div>
                             </div>
-                            <div className="panel-label">Ölçek</div>
+                            <div className="panel-label">Scale</div>
                         </div>
                         <div className="ribbon-panel">
                             <div className="tool-col compact">
                                 <div className="prop-row">
-                                    <span>Proje</span>
+                                    <span>Project</span>
                                     <select
                                         value={baseUnit}
                                         onChange={(e) => setBaseUnit(e.target.value as any)}
                                         style={{ width: '70px' }}
-                                        title="Proje baz birimi - çizim değerleri bu birimde saklanır"
+                                        title="Base unit - drawing values stored in this unit"
                                     >
                                         <option value="mm">mm</option>
                                         <option value="cm">cm</option>
@@ -838,12 +959,12 @@ const Ribbon = () => {
                                     </select>
                                 </div>
                                 <div className="prop-row">
-                                    <span>Göster</span>
+                                    <span>Display</span>
                                     <select
                                         value={drawingUnit}
                                         onChange={(e) => setDrawingUnit(e.target.value as any)}
                                         style={{ width: '70px' }}
-                                        title="Görüntüleme birimi - ölçüler bu birimde gösterilir"
+                                        title="Display unit - values shown in this unit"
                                     >
                                         <option value="mm">mm</option>
                                         <option value="cm">cm</option>
@@ -853,15 +974,15 @@ const Ribbon = () => {
                                     </select>
                                 </div>
                             </div>
-                            <div className="panel-label">Birimler</div>
+                            <div className="panel-label">Units</div>
                         </div>
                         <div className="ribbon-panel">
                             <div className="tool-col compact" style={{ fontSize: '11px', color: '#aaa', padding: '8px' }}>
-                                <div>Ölçek: <strong style={{ color: '#4cc2ff' }}>{drawingScale}</strong></div>
-                                <div>Proje: <strong style={{ color: '#ffcc00' }}>{baseUnit}</strong></div>
-                                <div>Göster: <strong style={{ color: '#4cc2ff' }}>{drawingUnit}</strong></div>
+                                <div>Scale: <strong style={{ color: '#4cc2ff' }}>{drawingScale}</strong></div>
+                                <div>Project: <strong style={{ color: '#ffcc00' }}>{baseUnit}</strong></div>
+                                <div>Display: <strong style={{ color: '#4cc2ff' }}>{drawingUnit}</strong></div>
                             </div>
-                            <div className="panel-label">Bilgi</div>
+                            <div className="panel-label">Info</div>
                         </div>
                     </div>
                 );
@@ -872,44 +993,44 @@ const Ribbon = () => {
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className={`tool-btn ${activeCommand === 'MTEXT' ? 'active' : ''}`} onClick={() => startCommand('MTEXT')}>
-                                    <span className="material-icons">text_fields</span> <span>Çoklu Metin</span>
+                                    <span className="material-icons">text_fields</span> <span>Multiline Text</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'TEXT' ? 'active' : ''}`} onClick={() => startCommand('TEXT')}>
-                                    <FaFont /> <span>Tek Metin</span>
+                                    <FaFont /> <span>Single Text</span>
                                 </button>
                             </div>
-                            <div className="panel-label">Metin</div>
+                            <div className="panel-label">Text</div>
                         </div>
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className={`tool-btn ${activeCommand === 'DIMLINEAR' ? 'active' : ''}`} onClick={() => startCommand('DIMLINEAR')}>
-                                    <TbLine /> <span>Doğrusal</span>
+                                    <TbLine /> <span>Linear</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMALIGNED' ? 'active' : ''}`} onClick={() => startCommand('DIMALIGNED')}>
-                                    <span className="material-icons">straighten</span> <span>Hizalı</span>
+                                    <span className="material-icons">straighten</span> <span>Aligned</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMANGULAR' ? 'active' : ''}`} onClick={() => startCommand('DIMANGULAR')}>
-                                    <span className="material-icons">architecture</span> <span>Açısal</span>
+                                    <span className="material-icons">architecture</span> <span>Angular</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMRADIUS' ? 'active' : ''}`} onClick={() => startCommand('DIMRADIUS')}>
-                                    <span className="material-icons">radio_button_checked</span> <span>Yarıçap</span>
+                                    <span className="material-icons">radio_button_checked</span> <span>Radius</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMDIAMETER' ? 'active' : ''}`} onClick={() => startCommand('DIMDIAMETER')}>
-                                    <span className="material-icons">data_usage</span> <span>Çap</span>
+                                    <span className="material-icons">data_usage</span> <span>Diameter</span>
                                 </button>
                             </div>
-                            <div className="panel-label">Ölçülendirme</div>
+                            <div className="panel-label">Dimensions</div>
                         </div>
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className={`tool-btn ${activeCommand === 'LEADER' ? 'active' : ''}`} onClick={() => startCommand('LEADER')}>
-                                    <FaProjectDiagram /> <span>Lider</span>
+                                    <FaProjectDiagram /> <span>Leader</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'TABLE' ? 'active' : ''}`} onClick={() => startCommand('TABLE')}>
-                                    <FaTable /> <span>Tablo</span>
+                                    <FaTable /> <span>Table</span>
                                 </button>
                             </div>
-                            <div className="panel-label">Liderler ve Tablolar</div>
+                            <div className="panel-label">Leaders & Tables</div>
                         </div>
                     </div>
                 );
@@ -920,16 +1041,16 @@ const Ribbon = () => {
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className="tool-btn" onClick={() => startCommand('GEOMCONSTRAINT_COINCIDENT')}>
-                                    <span className="material-icons">all_out</span> <span>Çakışık</span>
+                                    <span className="material-icons">all_out</span> <span>Coincident</span>
                                 </button>
                                 <button className="tool-btn" onClick={() => startCommand('GEOMCONSTRAINT_PARALLEL')}>
-                                    <span className="material-icons">view_stream</span> <span>Paralel</span>
+                                    <span className="material-icons">view_stream</span> <span>Parallel</span>
                                 </button>
                                 <button className="tool-btn" onClick={() => startCommand('GEOMCONSTRAINT_TANGENT')}>
-                                    <span className="material-icons">radio_button_unchecked</span> <span>Teğet</span>
+                                    <span className="material-icons">radio_button_unchecked</span> <span>Tangent</span>
                                 </button>
                             </div>
-                            <div className="panel-label">Geometrik</div>
+                            <div className="panel-label">Geometric</div>
                         </div>
                     </div>
                 );
@@ -940,13 +1061,13 @@ const Ribbon = () => {
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className="tool-btn" onClick={() => startCommand('PURGE')}>
-                                    <span className="material-icons">delete_sweep</span> <span>Temizle</span>
+                                    <span className="material-icons">delete_sweep</span> <span>Purge</span>
                                 </button>
                                 <button className="tool-btn" onClick={() => startCommand('AUDIT')}>
-                                    <span className="material-icons">verified_user</span> <span>Denetle</span>
+                                    <span className="material-icons">verified_user</span> <span>Audit</span>
                                 </button>
                             </div>
-                            <div className="panel-label">Bakım</div>
+                            <div className="panel-label">Maintenance</div>
                         </div>
                     </div>
                 );
@@ -956,21 +1077,22 @@ const Ribbon = () => {
                     <div className="ribbon-group">
                         <div className="ribbon-panel">
                             <div className="tool-grid">
-                                <button className="tool-btn" onClick={handleSave}><FaSave /> <span>DXF Kaydet</span></button>
-                                <button className="tool-btn" onClick={handleSaveAs}><FaFileExport /> <span>Farklı Kaydet</span></button>
+                                <button className="tool-btn" onClick={handleSave}><FaSave /> <span>Save DXF</span></button>
+                                <button className="tool-btn" onClick={handleSaveAs}><FaFileExport /> <span>Save As...</span></button>
                             </div>
-                            <div className="panel-label">Dışa Aktar</div>
+                            <div className="panel-label">Export</div>
                         </div>
                     </div>
                 );
 
             default:
-                return <div style={{ padding: '20px', color: '#888' }}>Bu sekme yapım aşamasındadır.</div>;
+                return <div style={{ padding: '20px', color: '#888' }}>This tab is under construction.</div>;
         }
     };
 
-    const tabs = ['Home', 'Annotate', 'Insert', 'Parametric', 'View', 'Manage', 'Export'];
-    if (showHatchTab) tabs.push('Hatch Editor');
+    // Static tabs - Hatch tab removed, using dialog instead
+    const baseTabs = useMemo(() => ['Home', 'Annotate', 'Insert', 'Parametric', 'View', 'Manage', 'Export'], []);
+    const tabs = baseTabs; // Hatch dialog kullanılıyor, tab artık gerekli değil
 
     return (
         <div className="ribbon-container">
@@ -980,13 +1102,13 @@ const Ribbon = () => {
                     <div className="modal-content" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <FaExclamationTriangle style={{ color: '#ff9800', marginRight: '10px' }} />
-                            DWG → DXF Dönüştürme Gerekli
+                            DWG → DXF Conversion Required
                         </div>
                         <div className="modal-body">
-                            <p>DWG formatı tarayıcıda doğrudan açılamaz. Önce DXF formatına dönüştürmeniz gerekiyor.</p>
+                            <p>DWG files cannot be opened directly in the browser. Please convert to DXF first.</p>
 
                             <div className="convert-options">
-                                <p><strong>Hızlı Dönüştürme:</strong></p>
+                                <p><strong>Quick Conversion:</strong></p>
                                 <div className="convert-buttons">
                                     <a
                                         href="https://cloudconvert.com/dwg-to-dxf"
@@ -1016,15 +1138,16 @@ const Ribbon = () => {
                             </div>
 
                             <p style={{ fontSize: '11px', color: '#888', marginTop: '12px' }}>
-                                Dönüştürdükten sonra DXF dosyasını bu uygulamada açabilirsiniz.
+                                After conversion, you can open the DXF file in this app.
                             </p>
                         </div>
                         <div className="modal-footer">
-                            <button onClick={() => setDwgWarning(false)}>Kapat</button>
+                            <button onClick={() => setDwgWarning(false)}>Close</button>
                         </div>
                     </div>
                 </div>
             )}
+
 
             <div className="ribbon-tabs">
                 {tabs.map(tab => (
@@ -1040,10 +1163,24 @@ const Ribbon = () => {
             <div className="ribbon-content">
                 {renderTabContent()}
             </div>
+
+            {/* Hatch Dialog */}
+            <HatchDialog
+                isOpen={hatchDialogOpen}
+                onClose={() => {
+                    setHatchDialogOpen(false);
+                    setHatchEditMode(false);
+                    setEditingHatchId(null);
+                }}
+                onApply={handleHatchApply}
+                onUpdate={handleHatchUpdate}
+                onLiveUpdate={handleHatchLiveUpdate}
+                initialParams={hatchParams}
+                editMode={hatchEditMode}
+                entityId={editingHatchId ?? undefined}
+            />
         </div>
     );
 };
-
-
 
 export default Ribbon;

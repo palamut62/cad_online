@@ -217,7 +217,7 @@ const DimensionInputPanel: React.FC<DimensionInputProps> = ({ position, length, 
     return (
         <Html
             position={position}
-            style={{ pointerEvents: 'auto' }}
+            style={{ pointerEvents: 'auto', transform: 'translate(40px, 40px)' }} // Kursörden 40px sağ-aşağı ofset
             zIndexRange={[200, 100]}
         >
             <div style={styles.inputContainer} onClick={(e) => e.stopPropagation()}>
@@ -380,7 +380,12 @@ const DynamicInput = () => {
     const dx = cursorPosition[0] - lastPoint[0];
     const dy = cursorPosition[1] - lastPoint[1];
     const angle = radToDeg(Math.atan2(dy, dx));
-    const angleNorm = angle < 0 ? angle + 360 : angle;
+
+    // Yatay referans çizgisine göre iç açı (0-180 arası)
+    // Negatif açıları pozitife çevir ve 180'den büyükse 360'tan çıkar
+    let angleNorm = angle < 0 ? angle + 360 : angle;
+    // İç açıyı hesapla (yatay ile yapılan en küçük açı)
+    const innerAngle = angleNorm > 180 ? 360 - angleNorm : angleNorm;
 
     // Orta nokta hesapla (uzunluk etiketi için)
     const midPoint: [number, number, number] = [
@@ -389,13 +394,13 @@ const DynamicInput = () => {
         0.1
     ];
 
-    // Açı yayı için noktalar - sadece açı 5-355 derece arasındaysa göster
+    // Açı yayı için noktalar - sadece açı 5-175 derece arasındaysa göster
     const arcRadius = Math.min(rawDist * 0.3, 50);
     const arcPoints: [number, number, number][] = [];
     const arcSegments = 20;
     // Açıyı radyan cinsinden hesapla (0'dan açıya kadar)
     const angleRad = Math.atan2(dy, dx);
-    const showArc = angleNorm > 5 && angleNorm < 355;
+    const showArc = innerAngle > 5 && innerAngle < 175;
 
     if (showArc && rawDist > 15) {
         for (let i = 0; i <= arcSegments; i++) {
@@ -452,19 +457,15 @@ const DynamicInput = () => {
         ];
 
         // Açı etiketi pozisyonu - çizginin altında
-        const angleLabelOffset = 25;
+        // Açı etiketi pozisyonu - çizginin altında (yay yarıçapına göre)
         const angleLabelBelowPos: [number, number, number] = [
-            lastPoint[0] + Math.cos(angleLabelAngle) * (arcRadius + 10),
-            lastPoint[1] + Math.sin(angleLabelAngle) * (arcRadius + 10) - angleLabelOffset,
+            lastPoint[0] + Math.cos(angleLabelAngle) * (arcRadius * 1.2),
+            lastPoint[1] + Math.sin(angleLabelAngle) * (arcRadius * 1.2),
             0.1
         ];
 
-        // Input panel pozisyonu - cursor yanında
-        const inputPanelPos: [number, number, number] = [
-            cursorPosition[0] + 25,
-            cursorPosition[1] + 25,
-            0.2
-        ];
+        // Input panel pozisyonu - doğrudan cursor üzerinde (CSS ile kaydırılacak)
+        const inputPanelPos = cursorPosition;
 
         return (
             <group>
@@ -511,15 +512,15 @@ const DynamicInput = () => {
                     </Html>
                 )}
 
-                {/* Açı etiketi - çizginin altında */}
-                {rawDist > 25 && angleNorm > 5 && angleNorm < 355 && (
+                {/* Açı etiketi - yatay ile yapılan iç açı */}
+                {rawDist > 25 && innerAngle > 5 && innerAngle < 175 && (
                     <Html
                         position={angleLabelBelowPos}
                         style={{ pointerEvents: 'none' }}
                         zIndexRange={[100, 0]}
                         center
                     >
-                        <div style={styles.angleLabel}>{angleNorm.toFixed(1)}°</div>
+                        <div style={styles.angleLabel}>{innerAngle.toFixed(1)}°</div>
                     </Html>
                 )}
 
@@ -527,7 +528,7 @@ const DynamicInput = () => {
                 <DimensionInputPanel
                     position={inputPanelPos}
                     length={dist}
-                    angle={angleNorm}
+                    angle={innerAngle}
                     unit={drawingUnit}
                     onSubmit={handleDimensionSubmit}
                 />

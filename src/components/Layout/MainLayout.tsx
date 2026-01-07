@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useDrawing } from '../../context/DrawingContext';
+import { FaFile, FaFolderOpen, FaSave, FaPrint } from 'react-icons/fa';
 import Ribbon from '../Ribbon/Ribbon';
 import Viewport from '../Viewport/Viewport';
 import CommandLine from '../CommandLine/CommandLine';
@@ -13,6 +14,8 @@ import DimensionEditDialog from '../Dialogs/DimensionEditDialog';
 import PrintDialog from '../Dialogs/PrintDialog';
 import LayerManager from '../Layers/LayerManager';
 import { DimensionSettings, saveDimensionSettings } from '../../types/dimensionSettings';
+import { parseDxf } from '../../utils/dxfLoader';
+import { exportDXF } from '../../utils/dxfExporter';
 import type { DimensionEntity } from '../../types/entities';
 import './MainLayout.css';
 
@@ -48,8 +51,18 @@ const MainLayout = () => {
         setLayerDialogState,
         // In-place text editor
         inPlaceTextEditorState,
-        cancelInPlaceEdit
+        cancelInPlaceEdit,
+        // File operations
+        fileName,
+        addSheet,
+        loadEntities,
+        // Print
+        setPrintDialogState,
+        // Zoom to fit
+        triggerZoomToFit
     } = useDrawing();
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
 
 
@@ -82,7 +95,54 @@ const MainLayout = () => {
     return (
         <div className="main-layout">
             <div className="title-bar">
-                <div className="app-title-container" style={{ marginLeft: '12px' }}>
+                {/* App Logo */}
+                <div className="app-logo">
+                    <img src="/gemini-icon.png" alt="CAD Logo" />
+                </div>
+                {/* Quick Access Toolbar */}
+                <div className="quick-access-toolbar">
+                    <button className="qat-btn" onClick={() => addSheet()} title="New File">
+                        <FaFile />
+                    </button>
+                    <button className="qat-btn" onClick={() => fileInputRef.current?.click()} title="Open">
+                        <FaFolderOpen />
+                    </button>
+                    <button className="qat-btn" onClick={() => exportDXF(entities, fileName)} title="Save">
+                        <FaSave />
+                    </button>
+                    <button className="qat-btn" onClick={() => setPrintDialogState({ isOpen: true })} title="Print">
+                        <FaPrint />
+                    </button>
+                    <div className="qat-separator"></div>
+                </div>
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    accept=".dxf,.dwg"
+                    onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                const content = event.target?.result as string;
+                                const result = parseDxf(content);
+                                if (result.errors.length > 0) {
+                                    alert('DXF read error: ' + result.errors.join('\n'));
+                                    return;
+                                }
+                                addSheet(file.name);
+                                setTimeout(() => {
+                                    loadEntities(result.entities, file.name);
+                                }, 10);
+                                setTimeout(() => triggerZoomToFit(), 150);
+                            };
+                            reader.readAsText(file);
+                        }
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                />
+                <div className="app-title-container">
                     <span className="app-title">2D Drafting & Annotation</span>
                     <span className="app-separator">-</span>
                     <span className="drawing-name">{sheets.find(s => s.id === activeSheetId)?.name || 'Untitled'}.dxf</span>

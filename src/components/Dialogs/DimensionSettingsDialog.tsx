@@ -19,54 +19,54 @@ interface DimensionSettingsDialogProps {
 }
 
 const PRESET_COLORS = [
-    { value: '#ffffff', label: 'Beyaz' },
-    { value: '#ff0000', label: 'Kırmızı' },
-    { value: '#ffff00', label: 'Sarı' },
-    { value: '#00ff00', label: 'Yeşil' },
+    { value: '#ffffff', label: 'White' },
+    { value: '#ff0000', label: 'Red' },
+    { value: '#ffff00', label: 'Yellow' },
+    { value: '#00ff00', label: 'Green' },
     { value: '#00ffff', label: 'Cyan' },
-    { value: '#0000ff', label: 'Mavi' },
+    { value: '#0000ff', label: 'Blue' },
     { value: '#ff00ff', label: 'Magenta' },
-    { value: '#ff8000', label: 'Turuncu' },
-    { value: '#808080', label: 'Gri' },
+    { value: '#ff8000', label: 'Orange' },
+    { value: '#808080', label: 'Gray' },
 ];
 
 const ARROW_STYLES: { value: ArrowStyle; label: string; icon?: string }[] = [
-    { value: 'closed', label: 'Kapalı Ok' },
-    { value: 'open', label: 'Açık Ok' },
-    { value: 'dot', label: 'Nokta' },
-    { value: 'arrowDot', label: 'Oklu Nokta' },
-    { value: 'architectural', label: 'Mimari (/)' },
-    { value: 'none', label: 'Yok' },
+    { value: 'closed', label: 'Closed Filled' },
+    { value: 'open', label: 'Open' },
+    { value: 'dot', label: 'Dot' },
+    { value: 'arrowDot', label: 'Dot with Arrow' },
+    { value: 'architectural', label: 'Architectural Tick' },
+    { value: 'none', label: 'None' },
 ];
 
 const ARROW_DIRECTIONS: { value: ArrowDirection; label: string }[] = [
-    { value: 'inside', label: 'İçeride' },
-    { value: 'outside', label: 'Dışarıda' },
-    { value: 'both', label: 'Her İki Taraf' },
+    { value: 'inside', label: 'Inside' },
+    { value: 'outside', label: 'Outside' },
+    { value: 'both', label: 'Both' },
 ];
 
 const TEXT_ALIGNMENTS: { value: TextAlignment; label: string }[] = [
-    { value: 'center', label: 'Orta' },
-    { value: 'above', label: 'Üst' },
-    { value: 'below', label: 'Alt' },
-    { value: 'left', label: 'Sol' },
-    { value: 'right', label: 'Sağ' },
+    { value: 'center', label: 'Center' },
+    { value: 'above', label: 'Above' },
+    { value: 'below', label: 'Below' },
+    { value: 'left', label: 'Left' },
+    { value: 'right', label: 'Right' },
 ];
 
 const DECIMAL_FORMATS: { value: DecimalFormat; label: string; example: string }[] = [
-    { value: '0', label: 'Tam Sayı', example: '123' },
-    { value: '0.0', label: '1 Ondalık', example: '123.5' },
-    { value: '0.00', label: '2 Ondalık', example: '123.45' },
-    { value: '0.000', label: '3 Ondalık', example: '123.456' },
-    { value: '0.0000', label: '4 Ondalık', example: '123.4567' },
-    { value: 'fraction', label: 'Kesir', example: '123 1/2' },
+    { value: '0', label: 'Integer', example: '123' },
+    { value: '0.0', label: '1 Decimal', example: '123.5' },
+    { value: '0.00', label: '2 Decimals', example: '123.45' },
+    { value: '0.000', label: '3 Decimals', example: '123.456' },
+    { value: '0.0000', label: '4 Decimals', example: '123.4567' },
+    { value: 'fraction', label: 'Fractional', example: '123 1/2' },
 ];
 
 const ANGLE_FORMATS: { value: AngleFormat; label: string; example: string }[] = [
-    { value: 'decimal', label: 'Ondalık Derece', example: '45.5°' },
-    { value: 'degMinSec', label: 'Derece/Dakika/Saniye', example: '45°30\'00"' },
-    { value: 'radian', label: 'Radyan', example: '0.794 rad' },
-    { value: 'gradian', label: 'Gradyan', example: '50.66g' },
+    { value: 'decimal', label: 'Decimal Degrees', example: '45.5°' },
+    { value: 'degMinSec', label: 'Deg/Min/Sec', example: '45°30\'00"' },
+    { value: 'radian', label: 'Radians', example: '0.794 rad' },
+    { value: 'gradian', label: 'Gradians', example: '50.66g' },
 ];
 
 const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpen, onClose, onApply }) => {
@@ -90,7 +90,7 @@ const DimensionSettingsDialog: React.FC<DimensionSettingsDialogProps> = ({ isOpe
     const handleSaveAsDefault = () => {
         saveDimensionSettings(settings); // Already saves to local storage which acts as default
         // Show feedback - using simple console for now, ideally use a toast
-        console.log('Ayarlar kaydedildi');
+        console.log('Settings saved');
     };
 
     const updateSetting = <K extends keyof DimensionSettings>(key: K, value: DimensionSettings[K]) => {

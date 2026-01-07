@@ -172,7 +172,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                 >
                     <div style={{ fontSize: '11px', fontWeight: 'bold', color: colors.accent, display: 'flex', alignItems: 'center', gap: '6px', letterSpacing: '0.5px' }}>
                         <span className="material-icons" style={{ fontSize: '14px' }}>settings</span>
-                        SETTINGS / AYARLAR
+                        SETTINGS
                     </div>
                     <button
                         onClick={onClose}
@@ -193,8 +193,8 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                     }}
                 >
                     {[
-                        { id: 'general', label: 'GENEL' },
-                        { id: 'ai', label: 'AI / TEK MODEL' },
+                        { id: 'general', label: 'GENERAL' },
+                        { id: 'ai', label: 'AI / SINGLE MODEL' },
                         { id: 'agents', label: 'AI AGENTS' }
                     ].map(tab => (
                         <button
@@ -225,8 +225,8 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                 <span className="material-icons" style={{ fontSize: '40px', color: colors.border }}>settings_applications</span>
                             </div>
                             <div>
-                                <h4 style={{ color: '#fff', margin: '0 0 8px 0' }}>Uygulama Ayarları</h4>
-                                <p style={{ margin: 0, fontSize: '13px' }}>Genel uygulama tercihleri bir sonraki güncelleme ile burada yer alacak.</p>
+                                <h4 style={{ color: '#fff', margin: '0 0 8px 0' }}>Application Settings</h4>
+                                <p style={{ margin: 0, fontSize: '13px' }}>General application preferences will be available here in the next update.</p>
                             </div>
                         </div>
                     )}
@@ -236,7 +236,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                             {/* API Key Section */}
                             <div className="settings-section">
                                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', fontSize: '10px', fontWeight: '700', color: colors.accent }}>
-                                    API KEY / ANAHTAR
+                                    API KEY
                                 </label>
                                 <div style={{ position: 'relative' }}>
                                     <input
@@ -271,7 +271,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                             {/* Filters Row */}
                             <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                                 <div style={{ flex: '1 1 200px', minWidth: '0' }}>
-                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '10px', fontWeight: '700', color: colors.textDim }}>PRICE / FİYAT</label>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '10px', fontWeight: '700', color: colors.textDim }}>PRICE</label>
                                     <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', padding: '2px', border: `1px solid ${colors.border}`, borderRadius: '4px' }}>
                                         {[
                                             { id: 'all', label: 'ALL' },
@@ -300,7 +300,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                     </div>
                                 </div>
                                 <div style={{ flex: '1 1 200px', minWidth: '0' }}>
-                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '10px', fontWeight: '700', color: colors.textDim }}>TYPE / YETENEK</label>
+                                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '10px', fontWeight: '700', color: colors.textDim }}>CAPABILITY</label>
                                     <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', padding: '2px', border: `1px solid ${colors.border}`, borderRadius: '4px' }}>
                                         {[
                                             { id: 'all', label: 'ALL' },
@@ -334,7 +334,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
 
                             {/* Model Selection Group */}
                             <div>
-                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '11px', fontWeight: '600', color: colors.textDim }}>MODEL SEÇİMİ</label>
+                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '11px', fontWeight: '600', color: colors.textDim }}>MODEL SELECTION</label>
 
                                 <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                                     <div style={{ position: 'relative', flex: 1 }}>
@@ -370,7 +370,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                 {isLoading ? (
                                     <div style={{ padding: '30px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', color: colors.textDim }}>
                                         <span className="material-icons spin-icon" style={{ fontSize: '24px', marginBottom: '8px', color: colors.accent }}>sync</span>
-                                        <p style={{ margin: 0, fontSize: '13px' }}>Modeller yükleniyor...</p>
+                                        <p style={{ margin: 0, fontSize: '13px' }}>Loading models...</p>
                                     </div>
                                 ) : error ? (
                                     <div style={{ padding: '12px', textAlign: 'center', background: 'rgba(250, 82, 82, 0.1)', borderRadius: '8px', border: '1px solid rgba(250, 82, 82, 0.2)', color: colors.error, fontSize: '13px' }}>
@@ -397,19 +397,19 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                         {availableModels.length > 0 ? (
                                             <>
                                                 {!filteredModels.find(m => m.id === localModel) && localModel && (
-                                                    <option value={localModel}>{localModel} (Seçili model filtre dışı)</option>
+                                                    <option value={localModel}>{localModel} (Selected model is filtered out)</option>
                                                 )}
                                                 {filteredModels.map(model => (
                                                     <option key={model.id} value={model.id}>{model.name}</option>
                                                 ))}
                                                 {filteredModels.length === 0 && (
-                                                    <option disabled>Filtreye uygun model yok</option>
+                                                    <option disabled>No models match the filter</option>
                                                 )}
                                             </>
                                         ) : (
                                             <>
                                                 <option value={localModel}>{localModel}</option>
-                                                <option disabled>Model yok, lütfen yenileyin</option>
+                                                <option disabled>No models, please refresh</option>
                                             </>
                                         )}
                                     </select>
@@ -420,7 +420,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                     <div style={{ marginTop: '12px', padding: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', border: `1px solid ${colors.border}` }}>
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '10px' }}>
                                             <div style={{ display: 'flex', flexDirection: 'column', minWidth: '0' }}>
-                                                <span style={{ color: colors.textDim, fontSize: '9px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>BAĞLAM (CTX)</span>
+                                                <span style={{ color: colors.textDim, fontSize: '9px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>CONTEXT (CTX)</span>
                                                 <span style={{ color: colors.accent, fontSize: '13px' }}>{currentModelDetails.context_length ? (currentModelDetails.context_length / 1024).toFixed(0) + 'k' : 'N/A'}</span>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -428,13 +428,13 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                                 <span style={{ color: '#fff', fontSize: '13px' }}>{currentModelDetails.pricing?.prompt || '0'}</span>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ color: colors.textDim, fontSize: '10px', fontWeight: '700' }}>TAMAMLAMA</span>
+                                                <span style={{ color: colors.textDim, fontSize: '10px', fontWeight: '700' }}>COMPLETION</span>
                                                 <span style={{ color: '#fff', fontSize: '13px' }}>{currentModelDetails.pricing?.completion || '0'}</span>
                                             </div>
                                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ color: colors.textDim, fontSize: '10px', fontWeight: '700' }}>YETENEK</span>
+                                                <span style={{ color: colors.textDim, fontSize: '10px', fontWeight: '700' }}>CAPABILITY</span>
                                                 <span style={{ color: '#fff', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                    {currentModelDetails.id.includes('vision') ? 'Görsel' : currentModelDetails.id.includes('code') ? 'Kod' : 'Metin'}
+                                                    {currentModelDetails.id.includes('vision') ? 'Vision' : currentModelDetails.id.includes('code') ? 'Code' : 'Text'}
                                                 </span>
                                             </div>
                                         </div>
@@ -462,7 +462,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                                 }}
                                             >
                                                 {isTesting ? <span className="material-icons spin-icon" style={{ fontSize: '14px' }}>sync</span> : <span className="material-icons" style={{ fontSize: '14px' }}>play_arrow</span>}
-                                                MODELİ TEST ET
+                                                TEST MODEL
                                             </button>
 
                                             {testResult && (
@@ -475,7 +475,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                                     color: testResult.success ? '#4cffa6' : '#ff6b6b'
                                                 }}>
                                                     <div style={{ fontWeight: '700', marginBottom: '2px', fontSize: '9px' }}>
-                                                        {testResult.success ? 'TEST BAŞARILI' : 'TEST HATASI'}
+                                                        {testResult.success ? 'TEST SUCCESSFUL' : 'TEST FAILED'}
                                                     </div>
                                                     {testResult.message}
                                                 </div>
@@ -488,21 +488,21 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                             {/* System Prompt Section */}
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                    <label style={{ fontSize: '13px', fontWeight: '600', color: colors.textDim }}>SİSTEM TALİMATI (ROLS)</label>
-                                    <button type="button" onClick={() => setLocalSystemPrompt('')} style={{ fontSize: '11px', color: colors.accent, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600' }}>Sıfırla</button>
+                                    <label style={{ fontSize: '13px', fontWeight: '600', color: colors.textDim }}>SYSTEM INSTRUCTION (ROLE)</label>
+                                    <button type="button" onClick={() => setLocalSystemPrompt('')} style={{ fontSize: '11px', color: colors.accent, background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600' }}>Reset</button>
                                 </div>
                                 <textarea
                                     value={localSystemPrompt}
                                     onChange={e => setLocalSystemPrompt(e.target.value)}
-                                    placeholder="Varsayılan CAD asistanı talimatlarını kullanmak için boş bırakın."
+                                    placeholder="Leave empty to use default CAD assistant instructions."
                                     style={{ width: '100%', height: '70px', padding: '12px', backgroundColor: colors.surface, color: '#ccc', border: `1px solid ${colors.border}`, borderRadius: '8px', resize: 'none', fontFamily: 'inherit', fontSize: '12px', outline: 'none' }}
                                 />
                             </div>
 
                             {/* Footer Actions */}
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px' }}>
-                                <button type="button" onClick={onClose} style={{ padding: '6px 16px', backgroundColor: 'transparent', color: colors.textDim, border: `1px solid ${colors.border}`, borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>CANCEL / İPTAL</button>
-                                <button type="submit" style={{ padding: '6px 20px', backgroundColor: colors.accent, color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '700', fontSize: '10px' }}>SAVE / KAYDET</button>
+                                <button type="button" onClick={onClose} style={{ padding: '6px 16px', backgroundColor: 'transparent', color: colors.textDim, border: `1px solid ${colors.border}`, borderRadius: '4px', cursor: 'pointer', fontSize: '10px', fontWeight: '700' }}>CANCEL</button>
+                                <button type="submit" style={{ padding: '6px 20px', backgroundColor: colors.accent, color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '700', fontSize: '10px' }}>SAVE</button>
                             </div>
                         </form>
                     )}
@@ -523,10 +523,10 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                 <div>
                                     <div style={{ color: colors.textMain, fontWeight: '700', fontSize: '12px', marginBottom: '4px' }}>
                                         <span className="material-icons" style={{ fontSize: '16px', verticalAlign: 'middle', marginRight: '6px' }}>hub</span>
-                                        Multi-Agent Modu
+                                        Multi-Agent Mode
                                     </div>
                                     <div style={{ color: colors.textDim, fontSize: '10px' }}>
-                                        6 özel ajan ile daha akıllı CAD üretimi
+                                        Smarter CAD production with 6 specialized agents
                                     </div>
                                 </div>
                                 <button
@@ -560,7 +560,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                             {!apiKey && (
                                 <div style={{ padding: '12px', background: 'rgba(255,107,107,0.1)', border: '1px solid rgba(255,107,107,0.3)', borderRadius: '8px', color: colors.error, fontSize: '11px' }}>
                                     <span className="material-icons" style={{ fontSize: '14px', verticalAlign: 'middle', marginRight: '6px' }}>warning</span>
-                                    API Key gerekli. "AI / TEK MODEL" sekmesinden API anahtarınızı ekleyin.
+                                    API Key required. Add your API key from the "AI / SINGLE MODEL" tab.
                                 </div>
                             )}
 
@@ -568,12 +568,12 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                             {useMultiAgent && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                                        <span style={{ color: colors.accent, fontSize: '10px', fontWeight: '700' }}>AJAN KONFİGÜRASYONLARI</span>
+                                        <span style={{ color: colors.accent, fontSize: '10px', fontWeight: '700' }}>AGENT CONFIGURATIONS</span>
                                         <div style={{ display: 'flex', gap: '8px' }}>
                                             <button
                                                 onClick={async () => {
                                                     if (!apiKey) {
-                                                        alert('API Key gerekli!');
+                                                        alert('API Key required!');
                                                         return;
                                                     }
                                                     setIsTestingAgents(true);
@@ -583,7 +583,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                                     for (const agentKey of Object.keys(agentsConfig) as AgentType[]) {
                                                         const config = agentsConfig[agentKey];
                                                         if (!config.enabled) {
-                                                            results[agentKey] = { success: true, message: 'Devre dışı' };
+                                                            results[agentKey] = { success: true, message: 'Disabled' };
                                                             continue;
                                                         }
                                                         try {
@@ -591,7 +591,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                                             results[agentKey] = result;
                                                             setAgentTestResults({ ...results });
                                                         } catch (e) {
-                                                            results[agentKey] = { success: false, message: e instanceof Error ? e.message : 'Hata' };
+                                                            results[agentKey] = { success: false, message: e instanceof Error ? e.message : 'Error' };
                                                             setAgentTestResults({ ...results });
                                                         }
                                                     }
@@ -615,12 +615,12 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                                 <span className={`material-icons ${isTestingAgents ? 'spin-icon' : ''}`} style={{ fontSize: '12px' }}>
                                                     {isTestingAgents ? 'sync' : 'play_arrow'}
                                                 </span>
-                                                {isTestingAgents ? 'Test Ediliyor...' : 'Tüm Modelleri Test Et'}
+                                                {isTestingAgents ? 'Testing...' : 'Test All Models'}
                                             </button>
                                             <button
                                                 onClick={async () => {
                                                     if (!apiKey) {
-                                                        alert('API Key gerekli!');
+                                                        alert('API Key required!');
                                                         return;
                                                     }
                                                     setIsRefreshingAgentModels(true);
@@ -648,21 +648,21 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                                 <span className={`material-icons ${isRefreshingAgentModels ? 'spin-icon' : ''}`} style={{ fontSize: '12px' }}>
                                                     {isRefreshingAgentModels ? 'sync' : 'refresh'}
                                                 </span>
-                                                {isRefreshingAgentModels ? 'Yenileniyor...' : 'Modelleri Yenile'}
+                                                {isRefreshingAgentModels ? 'Refreshing...' : 'Refresh Models'}
                                             </button>
                                             <button
                                                 onClick={resetAgentsConfig}
                                                 style={{ background: 'none', border: 'none', color: colors.textDim, cursor: 'pointer', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}
                                             >
                                                 <span className="material-icons" style={{ fontSize: '12px' }}>restart_alt</span>
-                                                Sıfırla
+                                                Reset
                                             </button>
                                         </div>
                                     </div>
 
                                     {/* Model Filter */}
                                     <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                        <span style={{ color: colors.textDim, fontSize: '9px' }}>Filtre:</span>
+                                        <span style={{ color: colors.textDim, fontSize: '9px' }}>Filter:</span>
                                         <button
                                             onClick={() => setAgentModelFilter('free')}
                                             style={{
@@ -676,7 +676,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                                 cursor: 'pointer'
                                             }}
                                         >
-                                            ⭐ Ücretsiz
+                                            ⭐ Free
                                         </button>
                                         <button
                                             onClick={() => setAgentModelFilter('high_context')}
@@ -691,7 +691,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                                 cursor: 'pointer'
                                             }}
                                         >
-                                            📚 Yüksek Context ({'>'}100k)
+                                            📚 High Context ({'>'}100k)
                                         </button>
                                         <button
                                             onClick={() => setAgentModelFilter('all')}
@@ -706,7 +706,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                                 cursor: 'pointer'
                                             }}
                                         >
-                                            Tümü
+                                            All
                                         </button>
                                     </div>
 
@@ -718,7 +718,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                             borderRadius: '6px',
                                             border: `1px solid ${colors.border}`
                                         }}>
-                                            <div style={{ fontSize: '9px', fontWeight: '700', color: colors.textDim, marginBottom: '8px' }}>TEST SONUÇLARI</div>
+                                            <div style={{ fontSize: '9px', fontWeight: '700', color: colors.textDim, marginBottom: '8px' }}>TEST RESULTS</div>
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                                 {(Object.keys(AGENT_DESCRIPTIONS) as AgentType[]).map(agentKey => {
                                                     const result = agentTestResults[agentKey];
@@ -831,11 +831,11 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                                                     outline: 'none'
                                                                 }}
                                                             >
-                                                                <option value="" disabled>Model Seçin...</option>
+                                                                <option value="" disabled>Select Model...</option>
 
                                                                 {/* FILTER: FREE */}
                                                                 {(agentModelFilter === 'free' || agentModelFilter === 'all') && (
-                                                                    <optgroup label="⭐ Ücretsiz Modeller">
+                                                                    <optgroup label="⭐ Free Models">
                                                                         {availableModels
                                                                             .filter(m => m.id.includes(':free'))
                                                                             .sort((a, b) => (b.context_length || 0) - (a.context_length || 0))
@@ -850,7 +850,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
 
                                                                 {/* FILTER: HIGH CONTEXT (>100k) */}
                                                                 {(agentModelFilter === 'high_context' || agentModelFilter === 'all') && (
-                                                                    <optgroup label="📚 Yüksek Context (>100k)">
+                                                                    <optgroup label="📚 High Context (>100k)">
                                                                         {availableModels
                                                                             .filter(m => (m.context_length || 0) >= 100000 && (agentModelFilter === 'high_context' || !m.id.includes(':free')))
                                                                             .sort((a, b) => (b.context_length || 0) - (a.context_length || 0))
@@ -865,7 +865,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
 
                                                                 {/* FILTER: ALL (Remaining) */}
                                                                 {agentModelFilter === 'all' && (
-                                                                    <optgroup label="Diğer Modeller">
+                                                                    <optgroup label="Other Models">
                                                                         {availableModels
                                                                             .filter(m => !m.id.includes(':free') && (m.context_length || 0) < 100000)
                                                                             .slice(0, 50)
@@ -921,10 +921,10 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                     <div style={{ padding: '12px', background: 'rgba(76, 194, 255, 0.05)', border: `1px solid rgba(76, 194, 255, 0.2)`, borderRadius: '8px' }}>
                                         <div style={{ color: colors.accent, fontSize: '10px', fontWeight: '700', marginBottom: '8px' }}>
                                             <span className="material-icons" style={{ fontSize: '12px', verticalAlign: 'middle', marginRight: '4px' }}>info</span>
-                                            ORKESTRASYON AKIŞI
+                                            ORCHESTRATION FLOW
                                         </div>
                                         <div style={{ color: colors.textDim, fontSize: '10px', lineHeight: '1.6' }}>
-                                            İstek Analizi → Tasarım Stratejisi → Mühendislik Detayı → CAD Özellik Planlama → CAD Çizim → JSON Doğrulama
+                                            Request Analysis → Design Strategy → Engineering Detail → CAD Feature Planning → CAD Drawing → JSON Validation
                                         </div>
                                     </div>
                                 </div>
@@ -934,8 +934,8 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                             {!useMultiAgent && (
                                 <div style={{ textAlign: 'center', padding: '40px 20px', color: colors.textDim }}>
                                     <span className="material-icons" style={{ fontSize: '48px', color: colors.border, marginBottom: '12px', display: 'block' }}>hub</span>
-                                    <p style={{ margin: 0, fontSize: '12px' }}>Multi-Agent modu kapalı.</p>
-                                    <p style={{ margin: '8px 0 0 0', fontSize: '11px' }}>Tek model kullanmak için "AI / TEK MODEL" sekmesini kullanın.</p>
+                                    <p style={{ margin: 0, fontSize: '12px' }}>Multi-Agent mode is disabled.</p>
+                                    <p style={{ margin: '8px 0 0 0', fontSize: '11px' }}>Use the "AI / SINGLE MODEL" tab to use a single model.</p>
                                 </div>
                             )}
                         </div>

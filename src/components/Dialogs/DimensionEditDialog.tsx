@@ -11,33 +11,33 @@ interface DimensionEditDialogProps {
 }
 
 const PRESET_COLORS = [
-    { value: '#ffffff', label: 'Beyaz' },
-    { value: '#ff0000', label: 'Kırmızı' },
-    { value: '#ffff00', label: 'Sarı' },
-    { value: '#00ff00', label: 'Yeşil' },
+    { value: '#ffffff', label: 'White' },
+    { value: '#ff0000', label: 'Red' },
+    { value: '#ffff00', label: 'Yellow' },
+    { value: '#00ff00', label: 'Green' },
     { value: '#00ffff', label: 'Cyan' },
-    { value: '#0000ff', label: 'Mavi' },
+    { value: '#0000ff', label: 'Blue' },
     { value: '#ff00ff', label: 'Magenta' },
-    { value: '#ff8000', label: 'Turuncu' },
-    { value: '#808080', label: 'Gri' },
+    { value: '#ff8000', label: 'Orange' },
+    { value: '#808080', label: 'Gray' },
 ];
 
 const ARROW_STYLES: { value: ArrowStyle; label: string }[] = [
-    { value: 'closed', label: 'Kapalı Ok' },
-    { value: 'open', label: 'Açık Ok' },
-    { value: 'dot', label: 'Nokta' },
-    { value: 'arrowDot', label: 'Oklu Nokta' },
-    { value: 'architectural', label: 'Mimari (/)' },
-    { value: 'none', label: 'Yok' },
+    { value: 'closed', label: 'Closed Filled' },
+    { value: 'open', label: 'Open' },
+    { value: 'dot', label: 'Dot' },
+    { value: 'arrowDot', label: 'Dot with Arrow' },
+    { value: 'architectural', label: 'Architectural Tick' },
+    { value: 'none', label: 'None' },
 ];
 
 const DECIMAL_FORMATS: { value: DecimalFormat; label: string; example: string }[] = [
-    { value: '0', label: 'Tam Sayı', example: '123' },
-    { value: '0.0', label: '1 Ondalık', example: '123.5' },
-    { value: '0.00', label: '2 Ondalık', example: '123.45' },
-    { value: '0.000', label: '3 Ondalık', example: '123.456' },
-    { value: '0.0000', label: '4 Ondalık', example: '123.4567' },
-    { value: 'fraction', label: 'Kesir', example: '123 1/2' },
+    { value: '0', label: 'Integer', example: '123' },
+    { value: '0.0', label: '1 Decimal', example: '123.5' },
+    { value: '0.00', label: '2 Decimals', example: '123.45' },
+    { value: '0.000', label: '3 Decimals', example: '123.456' },
+    { value: '0.0000', label: '4 Decimals', example: '123.4567' },
+    { value: 'fraction', label: 'Fractional', example: '123 1/2' },
 ];
 
 const DimensionEditDialog: React.FC<DimensionEditDialogProps> = ({ isOpen, onClose, onSave, entity }) => {

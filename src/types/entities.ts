@@ -229,6 +229,7 @@ export interface HatchEntity extends BaseEntity {
   pattern: HatchPattern;
   scale: number;
   rotation: number;
+  opacity?: number;
 }
 
 export interface HatchPattern {

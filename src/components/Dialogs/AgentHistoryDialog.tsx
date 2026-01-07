@@ -27,7 +27,7 @@ const AgentHistoryDialog: React.FC<AgentHistoryDialogProps> = ({ isOpen, onClose
     };
 
     const formatDate = (timestamp: number) => {
-        return new Date(timestamp).toLocaleString('tr-TR', {
+        return new Date(timestamp).toLocaleString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
@@ -133,7 +133,7 @@ const AgentHistoryDialog: React.FC<AgentHistoryDialogProps> = ({ isOpen, onClose
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span className="material-icons" style={{ color: colors.accent, fontSize: '18px' }}>history</span>
                         <span style={{ fontSize: '12px', fontWeight: '700', color: colors.textMain, letterSpacing: '0.5px' }}>
-                            AGENT HISTORY / İŞLEM GEÇMİŞİ
+                            AGENT HISTORY
                         </span>
                         <span style={{
                             fontSize: '10px',
@@ -205,7 +205,7 @@ const AgentHistoryDialog: React.FC<AgentHistoryDialogProps> = ({ isOpen, onClose
                             gap: '12px'
                         }}>
                             <span className="material-icons" style={{ fontSize: '48px', opacity: 0.2 }}>history_toggle_off</span>
-                            <span style={{ fontSize: '12px' }}>Henüz işlem kaydı bulunmamaktadır.</span>
+                            <span style={{ fontSize: '12px' }}>No history available.</span>
                         </div>
                     ) : (
                         agentHistory.map((entry) => (

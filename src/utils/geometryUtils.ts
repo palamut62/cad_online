@@ -167,10 +167,8 @@ export const closestPointOnEntity = (px: number, py: number, ent: Entity): numbe
 
     // Noktanın hatch içinde olup olmadığını kontrol et
     if (isPointInsidePolygon(px, py, pointVerts)) {
-      // HATCH içindeyse - düşük mesafe döndür (seçimi kolaylaştır)
-      // Bu değer seçim toleransından (15) düşük olmalı
-      // Ama başka entity'ler daha yakınsa onlar seçilsin
-      return Math.min(minEdgeDist, 5); // İçerideyse maksimum 5 birim mesafe döndür
+      // HATCH içindeyse - 0 mesafe döndür (kesin seçim)
+      return 0;
     }
 
     // Dışarıdaysa kenar mesafesi
@@ -620,6 +618,55 @@ export const getClosestSnapPoint = (
   return bestSnap;
 };
 
+export interface AlignmentGuide {
+  type: 'x' | 'y'; // x = vertical line at x, y = horizontal line at y
+  value: number; // coordinate value
+  point: Point; // source snap point
+}
+
+/**
+ * Find alignment guides (horizontal/vertical) from entities snap points
+ */
+export const findAlignmentPoints = (
+  cursor: Point,
+  entities: Entity[],
+  extraPoints: Point[] = [],
+  threshold: number = 0.5
+): { x?: AlignmentGuide, y?: AlignmentGuide } => {
+  let guideX: AlignmentGuide | undefined;
+  let guideY: AlignmentGuide | undefined;
+  let minDx = threshold;
+  let minDy = threshold;
+
+  const checkPoint = (pt: Point) => {
+    // Check Vertical Alignment (matches X)
+    const dx = Math.abs(cursor[0] - pt[0]);
+    if (dx < minDx) {
+      minDx = dx;
+      guideX = { type: 'x', value: pt[0], point: pt };
+    }
+
+    // Check Horizontal Alignment (matches Y)
+    const dy = Math.abs(cursor[1] - pt[1]);
+    if (dy < minDy) {
+      minDy = dy;
+      guideY = { type: 'y', value: pt[1], point: pt };
+    }
+  };
+
+  // Check extra points first (e.g. tempPoints) - higher priority
+  extraPoints.forEach(checkPoint);
+
+  // Check entities
+  entities.forEach(ent => {
+    if (!ent.visible) return;
+    const snaps = getSnapPoints(ent);
+    snaps.forEach(snap => checkPoint(snap.point));
+  });
+
+  return { x: guideX, y: guideY };
+};
+
 export interface GripPoint {
   point: Point;
   type: 'start' | 'end' | 'mid' | 'center' | 'vertex' | 'quadrant' | 'origin';
@@ -949,4 +996,44 @@ export const doesEntityIntersectBox = (ent: Entity, min: Point, max: Point): boo
     return false;
   }
   return false;
+};
+
+/**
+ * Scale an entity by a given factor
+ */
+export const scaleEntity = (ent: Entity, factor: number): Entity => {
+  // Deep clone to avoid mutation
+  const e = JSON.parse(JSON.stringify(ent));
+
+  if (e.type === 'LINE') {
+    e.start = [e.start[0] * factor, e.start[1] * factor, e.start[2] * factor];
+    e.end = [e.end[0] * factor, e.end[1] * factor, e.end[2] * factor];
+  } else if (e.type === 'CIRCLE' || e.type === 'ARC') {
+    e.center = [e.center[0] * factor, e.center[1] * factor, (e.center[2] || 0) * factor];
+    e.radius *= factor;
+  } else if (e.type === 'ELLIPSE') {
+    e.center = [e.center[0] * factor, e.center[1] * factor, (e.center[2] || 0) * factor];
+    e.rx *= factor;
+    e.ry *= factor;
+  } else if (e.type === 'LWPOLYLINE') {
+    e.vertices = e.vertices.map((v: Point) => [v[0] * factor, v[1] * factor, v[2] * factor]);
+  } else if (e.type === 'POINT') {
+    e.position = [e.position[0] * factor, e.position[1] * factor, e.position[2] * factor];
+  } else if (e.type === 'TEXT' || e.type === 'MTEXT') {
+    e.position = [e.position[0] * factor, e.position[1] * factor, e.position[2] * factor];
+    if (e.height) e.height *= factor;
+  } else if (e.type === 'DIMENSION') {
+    if (e.defPoint) e.defPoint = [e.defPoint[0] * factor, e.defPoint[1] * factor, e.defPoint[2] * factor];
+    if (e.textPoint) e.textPoint = [e.textPoint[0] * factor, e.textPoint[1] * factor, e.textPoint[2] * factor];
+  } else if (e.type === 'BLOCK') {
+    if (e.position) e.position = [e.position[0] * factor, e.position[1] * factor, e.position[2] * factor];
+  } else if (e.type === 'TABLE') {
+    if (e.position) e.position = [e.position[0] * factor, e.position[1] * factor, e.position[2] * factor];
+    if (e.width) e.width *= factor;
+    if (e.height) e.height *= factor;
+    if (e.rowHeight) e.rowHeight *= factor;
+    if (e.colWidth) e.colWidth *= factor;
+  }
+
+  return e;
 };

@@ -3,6 +3,9 @@ import type { Entity, Point } from '../types/entities';
 import type { CommandType } from '../types/commands';
 import { closestPointOnEntity, rotatePoint as rotatePt, scalePoint as scalePt, translatePoint as translatePt, mirrorPoint as mirrorPt, getClosestSnapPoint, SnapPoint, GripPoint, distance2D, isEntityInBox, doesEntityIntersectBox } from '../utils/geometryUtils';
 import { trimLineEntity, trimArcEntity, trimCircleEntity, extendLineEntity, extendArcEntity } from '../utils/intersectionUtils';
+import { findAlignmentPoints, AlignmentGuide, scaleEntity } from '../utils/geometryUtils';
+import { findBoundaryFromPoint } from '../utils/boundaryUtils';
+import { convertToUnit } from '../utils/unitConversion';
 
 import { HistoryManager } from '../utils/historyManager';
 import { calculateDimensionGeometry, autoDetectPoints } from '../utils/dimensionUtils';
@@ -98,6 +101,7 @@ interface DrawingContextValue {
   entities: Entity[];
   addEntity: (entity: any) => void;
   updateEntity: (id: number, updates: any) => void;
+  updateEntityTransient: (id: number, updates: any) => void; // No history, for high-frequency updates
   deleteEntities: (ids: Set<number>) => void;
   getEntity: (id: number) => Entity | undefined;
 
@@ -144,6 +148,8 @@ interface DrawingContextValue {
   toggleOrtho: () => void;
   polarTrackingEnabled: boolean;
   togglePolarTracking: () => void;
+  // Alignment Guides (Smart Guides)
+  alignmentGuides: { x?: AlignmentGuide, y?: AlignmentGuide };
   polarTrackingAngle: number;
   setPolarTrackingAngle: (angle: number) => void;
 
@@ -382,6 +388,9 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     return sheets[0]?.id || '';
   });
 
+  // Alignment Guides (Smart Guides)
+  const [alignmentGuides, setAlignmentGuides] = useState<{ x?: AlignmentGuide, y?: AlignmentGuide }>({});
+
   // Table Dialog State
   const [tableDialogState, setTableDialogState] = useState<{
     isOpen: boolean;
@@ -410,7 +419,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     width?: number;
     rotation?: number;
     style?: any;
-    onSubmit?: (text: string) => void;
+    onSubmit?: (text: string, style?: any) => void;
     onCancel?: () => void;
   }>({ isOpen: false });
 
@@ -554,9 +563,25 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     updateActiveSheet({ baseUnit: unit });
   }, [updateActiveSheet]);
 
-  const setDrawingUnit = useCallback((unit: DrawingUnit) => {
-    updateActiveSheet({ drawingUnit: unit });
-  }, [updateActiveSheet]);
+  const setDrawingUnit = useCallback((newUnit: DrawingUnit) => {
+    setSheets(prev => prev.map(sheet => {
+      if (sheet.id !== activeSheetId) return sheet;
+
+      // Calculate conversion factor from current unit to new unit
+      // convertToUnit returns value in new unit. e.g. 1 mm -> 0.1 cm.
+      const factor = convertToUnit(1, sheet.drawingUnit, newUnit);
+
+      // Scale all entities to preserve physical size
+      const newEntities = sheet.entities.map(ent => scaleEntity(ent, factor));
+
+      return {
+        ...sheet,
+        drawingUnit: newUnit,
+        baseUnit: newUnit, // Assume baseUnit changes too for now to keep consistency
+        entities: newEntities
+      };
+    }));
+  }, [activeSheetId]);
 
   const setDrawingScale = useCallback((scale: string) => {
     updateActiveSheet({ drawingScale: scale });
@@ -828,6 +853,14 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     createHistoryItem('UPDATE' as CommandType);
   }, [captureBeforeState, createHistoryItem]);
 
+  // Update entity transient (no history, for live preview)
+  const updateEntityTransient = useCallback((id: number, updates: any) => {
+    setEntities(prev => prev.map(ent =>
+      ent.id === id ? { ...ent, ...updates } : ent
+    ));
+    // No history, no modified flag (optional)
+  }, []);
+
   // Delete entities
   const deleteEntities = useCallback((ids: Set<number>) => {
     captureBeforeState();
@@ -971,6 +1004,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     setStep(0);
     setTempPoints([]);
     setCommandState({});
+    setAlignmentGuides({}); // Hizalama çizgilerini temizle
     console.log('Command cancelled');
   }, [activeCommand, tempPoints, addEntity, activeLayerId]);
 
@@ -1010,16 +1044,24 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   // Finish polyline
   const finishPolyline = useCallback(() => {
     if (activeCommand === 'POLYLINE' && tempPoints.length > 1) {
+      // İlk ve son nokta yakınsa otomatik kapat
+      const firstPoint = tempPoints[0];
+      const lastPoint = tempPoints[tempPoints.length - 1];
+      const dist = Math.hypot(lastPoint[0] - firstPoint[0], lastPoint[1] - firstPoint[1]);
+      const closeThreshold = 3; // 3 birimden yakınsa kapalı kabul et
+      const isClosed = dist < closeThreshold && tempPoints.length > 2;
+
       addEntity({
         type: 'LWPOLYLINE',
-        vertices: tempPoints,
-        closed: false,
+        vertices: isClosed ? tempPoints.slice(0, -1) : tempPoints,
+        closed: isClosed,
         color: 'BYLAYER',
         layer: activeLayerId,
       });
       cancelCommand();
     }
   }, [activeCommand, tempPoints, addEntity, cancelCommand, activeLayerId]);
+
 
   // Undo
   const undo = useCallback(() => {
@@ -1284,18 +1326,40 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       }
     }
 
-    // Only calculate snap points when actively drawing (command is active)
-    // This prevents unnecessary calculations during idle mouse movement
-    if (osnapEnabled && activeCommand) {
+    // Only calculate snap points when actively drawing (command is active) OR valid selection exists
+    // This allows seeing snap points on grips when selecting
+    if (osnapEnabled && (activeCommand || selectedIds.size > 0)) {
       const snap = getClosestSnapPoint(point, entities, 1.0);
-      setActiveSnap(snap);
+      setActiveSnap(snap); // Bu visual marker için
+
+      // Eğer snap varsa cursor'ı oraya kilitliyoruz, alignment aramaya gerek yok (veya alignment'ı temizle)
+      if (snap) {
+        point = snap.point;
+        setAlignmentGuides({}); // Snap varsa guide temizle
+      } else {
+        // Snap yoksa Alignment Guide (Smart Guide) ara
+        // Sadece çizim yaparken (polyline/line) veya taşıma yaparken anlamlı
+        if (activeCommand === 'LINE' || activeCommand === 'POLYLINE' || activeCommand === 'MOVE' || activeCommand === 'COPY') {
+          // 1.0 birim threshold (zoom'a göre ayarlanmalı ama şimdilik sabit)
+          const guides = findAlignmentPoints(point, entities, tempPoints, 1.0);
+          setAlignmentGuides(guides);
+
+          // Snap to guides
+          if (guides.x) point[0] = guides.x.value;
+          if (guides.y) point[1] = guides.y.value;
+        } else {
+          setAlignmentGuides({});
+        }
+      }
     } else if (activeSnap !== null) {
       setActiveSnap(null);
+      setAlignmentGuides({});
     }
 
     // Ortho constraint when Shift is held during LINE/POLYLINE
+    // Ortho constraint when Shift is held or orthoEnabled during LINE/POLYLINE
     let finalPoint = point;
-    if (shiftKeyPressed && (activeCommand === 'LINE' || activeCommand === 'POLYLINE') && tempPoints.length > 0) {
+    if ((shiftKeyPressed || orthoEnabled) && (activeCommand === 'LINE' || activeCommand === 'POLYLINE') && tempPoints.length > 0) {
       const lastPoint = tempPoints[tempPoints.length - 1];
       const dx = point[0] - lastPoint[0];
       const dy = point[1] - lastPoint[1];
@@ -1309,6 +1373,43 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         finalPoint = [lastPoint[0], point[1], 0];
       }
     }
+    // Polar Tracking constraint
+    else if (polarTrackingEnabled && (activeCommand === 'LINE' || activeCommand === 'POLYLINE') && tempPoints.length > 0) {
+      const lastPoint = tempPoints[tempPoints.length - 1];
+      const dx = point[0] - lastPoint[0];
+      const dy = point[1] - lastPoint[1];
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist > 0.001) {
+        // Get current angle in degrees
+        let currentAngle = Math.atan2(dy, dx) * 180 / Math.PI;
+        if (currentAngle < 0) currentAngle += 360;
+
+        // Check for polar snap (every 90 degrees + 45 degrees usually, or configured increment)
+        // Defaulting to 90 degree increments for basic polar tracking like Ortho but allows angles
+        // Better: 45 degree increments
+        const increment = 45;
+        const snapThreshold = 5; // degrees
+
+        const remainder = currentAngle % increment;
+
+        let snapAngle: number | null = null;
+        if (remainder < snapThreshold) {
+          snapAngle = currentAngle - remainder;
+        } else if (remainder > increment - snapThreshold) {
+          snapAngle = currentAngle + (increment - remainder);
+        }
+
+        if (snapAngle !== null) {
+          const snapRad = snapAngle * Math.PI / 180;
+          finalPoint = [
+            lastPoint[0] + Math.cos(snapRad) * dist,
+            lastPoint[1] + Math.sin(snapRad) * dist,
+            0
+          ];
+        }
+      }
+    }
 
     setCursorPosition(finalPoint);
   }, [entities, osnapEnabled, activeGrip, activeCommand, activeSnap, setActiveSnap, setEntities, setCursorPosition, updateSelectionBox, shiftKeyPressed, tempPoints]);
@@ -1319,7 +1420,16 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       return;
     }
 
-    let point = (osnapEnabled && activeSnap) ? activeSnap.point : rawPoint;
+    // Re-calculate snap at click time to avoid stale snap points
+    // This fixes the issue where mouse moves after snap but before click
+    let point = rawPoint;
+    if (osnapEnabled && activeCommand) {
+      const freshSnap = getClosestSnapPoint(rawPoint, entities, 1.0);
+      if (freshSnap) {
+        point = freshSnap.point;
+        setActiveSnap(freshSnap); // Update visual marker too
+      }
+    }
 
     // Ortho constraint when Shift is held or orthoEnabled during LINE/POLYLINE
     if ((shiftKeyPressed || orthoEnabled) && (activeCommand === 'LINE' || activeCommand === 'POLYLINE') && tempPoints.length > 0) {
@@ -4134,20 +4244,39 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     } else if (activeCommand === 'HATCH') {
       // HATCH: Create hatch pattern in closed boundary
       // Step 1: Select closed entity
+      // HATCH Logic with Pick Point
       if (step === 1) {
         let closestId: number | null = null;
         let minD = Infinity;
         const SELECT_THRESHOLD = 10.0;
 
+        // 1. Try selecting existing closed entity
         entities.forEach(ent => {
           if (!ent.visible) return;
 
           // Check if entity is closed or circle/ellipse
           let isClosed = false;
           if (ent.type === 'CIRCLE' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') isClosed = true;
-          if (ent.type === 'LWPOLYLINE' && (ent as any).closed) isClosed = true;
+          if (ent.type === 'LWPOLYLINE') {
+            // Explicit closed flag
+            if ((ent as any).closed) {
+              isClosed = true;
+            } else {
+              // Check if first and last points are close enough (effectively closed)
+              const verts = (ent as any).vertices;
+              if (verts && verts.length >= 3) {
+                const first = verts[0];
+                const last = verts[verts.length - 1];
+                const dist = Math.hypot(last[0] - first[0], last[1] - first[1]);
+                if (dist < 3) {
+                  isClosed = true;
+                }
+              }
+            }
+          }
 
           if (!isClosed) return;
+
 
           const d = closestPointOnEntity(point[0], point[1], ent);
           if (d < minD && d < SELECT_THRESHOLD) {
@@ -4199,6 +4328,13 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             }
 
             if (vertices.length >= 3) {
+              const defaults = commandState.hatchParams || {};
+              const defaultPattern = defaults.pattern || { name: 'ANSI31', type: 'predefined', angle: 45 };
+              // Ensure pattern angle is preserved
+              if (defaults.pattern && defaults.pattern.name === 'ANSI31' && defaults.pattern.angle === undefined) {
+                defaultPattern.angle = 45;
+              }
+
               addEntity({
                 type: 'HATCH',
                 boundary: {
@@ -4206,17 +4342,47 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
                   vertices: vertices,
                   closed: true
                 },
-                pattern: { name: 'ANSI31', type: 'predefined', angle: 45 },
-                scale: 1,
-                rotation: 0,
-                color: boundaryEnt.color || '#ffffff',
-                layer: boundaryEnt.layer || '0'
+                pattern: defaultPattern,
+                scale: defaults.scale ?? 1,
+                rotation: defaults.rotation ?? 0,
+                color: defaults.color || boundaryEnt.color || '#ffffff',
+                layer: activeLayerId,
+                opacity: defaults.opacity ?? 1
               } as any);
               createHistoryItem('HATCH' as CommandType);
-              // cancelCommand(); // Keep command active
               setTempPoints([]); // Reset points if any
-              // setStep(1); // Already 1, stay in loop
+              cancelCommand(); // Komutu bitir
             }
+          }
+        }
+        // 2. Pick Point Boundary Detection (New Feature)
+        else {
+          // Import handled at top of file hopefully, if not we will fix imports
+          const boundaryVertices = findBoundaryFromPoint(point, entities);
+          if (boundaryVertices && boundaryVertices.length >= 3) {
+            const defaults = commandState.hatchParams || {};
+            const defaultPattern = defaults.pattern || { name: 'ANSI31', type: 'predefined', angle: 45 };
+            if (defaults.pattern && defaults.pattern.name === 'ANSI31' && defaults.pattern.angle === undefined) {
+              defaultPattern.angle = 45;
+            }
+
+            addEntity({
+              type: 'HATCH',
+              boundary: {
+                type: 'LWPOLYLINE',
+                vertices: boundaryVertices,
+                closed: true
+              },
+              pattern: defaultPattern,
+              scale: defaults.scale ?? 1,
+              rotation: defaults.rotation ?? 0,
+              color: defaults.color || 'BYLAYER',
+              layer: activeLayerId,
+              opacity: defaults.opacity ?? 1
+            } as any);
+            createHistoryItem('HATCH' as CommandType);
+            setTempPoints([]);
+            cancelCommand(); // Komutu bitir
           }
         }
       }
@@ -5194,6 +5360,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     entities,
     addEntity,
     updateEntity,
+    updateEntityTransient,
     deleteEntities,
     getEntity,
     activeCommand,
@@ -5277,18 +5444,19 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     toggleGrid,
     orthoEnabled,
     toggleOrtho,
+    alignmentGuides, // Export guides state
   }), [
     sheets, activeSheetId, addSheet, removeSheet, switchSheet, renameSheet,
     fileName, isModified, newFile, loadEntities, loadProject,
     layerDialogState, setLayerDialogState, layers, activeLayerId, addLayer, removeLayer, updateLayer, setActiveLayerId,
     baseUnit, drawingUnit, drawingScale, scaleFactor,
-    entities, addEntity, updateEntity, deleteEntities, getEntity,
+    entities, addEntity, updateEntity, updateEntityTransient, deleteEntities, getEntity,
     activeCommand, startCommand, cancelCommand,
     step, tempPoints, cursorPosition, commandState,
     handleCommandInput, handleMouseMove, handleValueInput, finishPolyline,
     selectedIds, toggleSelection, clearSelection, selectAll, hoveredEntityId, setHoveredEntityId,
     osnapEnabled, toggleOsnap, activeSnap,
-    gridEnabled, toggleGrid, orthoEnabled, toggleOrtho,
+    gridEnabled, toggleGrid, orthoEnabled, toggleOrtho, alignmentGuides,
     polarTrackingEnabled, togglePolarTracking, polarTrackingAngle, setPolarTrackingAngle,
     activeGrip, activateGrip, cancelGrip, selectionBox,
     handlePointerDown, handlePointerUp,

@@ -75,11 +75,11 @@ const ApplicationMenuDialog: React.FC<ApplicationMenuDialogProps> = ({ isOpen, o
                     } else if (data.entities && Array.isArray(data.entities)) {
                         loadProject(data); // loadProject handles legacy format too
                     } else {
-                        alert("Geçersiz dosya formatı.");
+                        alert("Invalid file format.");
                     }
                 } catch (err) {
-                    console.error('Dosya okuma hatası:', err);
-                    alert("Dosya okunamadı.");
+                    console.error('File read error:', err);
+                    alert("Failed to read file.");
                 }
             };
             reader.readAsText(file);

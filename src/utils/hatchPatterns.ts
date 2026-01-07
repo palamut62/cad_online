@@ -1,5 +1,5 @@
 // Simple types for pattern configuration
-export type PatternType = 'lines' | 'cross' | 'dots' | 'solid' | 'zigzag' | 'honeycomb' | 'hexagon' | 'diamond' | 'wave' | 'dash' | 'grid';
+export type PatternType = 'lines' | 'cross' | 'dots' | 'solid' | 'zigzag' | 'honeycomb' | 'hexagon' | 'diamond' | 'wave' | 'dash' | 'grid' | 'custom_image';
 
 export interface HatchPatternConfig {
     name: string;
@@ -7,53 +7,74 @@ export interface HatchPatternConfig {
     angle: number; // base angle in degrees
     scale: number; // base scale
     spacing: number; // spacing between lines relative to scale
-    category: 'architectural' | 'industrial' | 'natural' | 'geometric';
+    category: 'architectural' | 'industrial' | 'natural' | 'geometric' | 'custom';
     color?: string; // default color suggestion
+    imageData?: string; // Base64 data for custom images
 }
 
 // Pattern categories for UI grouping
 export const PATTERN_CATEGORIES = {
-    architectural: { name: 'Mimari', icon: '🏠' },
-    industrial: { name: 'Endüstriyel', icon: '⚙️' },
-    natural: { name: 'Doğal', icon: '🌿' },
-    geometric: { name: 'Geometrik', icon: '◇' },
+    architectural: { name: 'Architectural', icon: '🏠' },
+    industrial: { name: 'Industrial', icon: '⚙️' },
+    natural: { name: 'Natural', icon: '🌿' },
+    geometric: { name: 'Geometric', icon: '◇' },
+    custom: { name: 'Custom', icon: '🖼️' },
 };
 
 // Preset patterns - expanded with professional patterns
 export const PRESET_PATTERNS: Record<string, HatchPatternConfig> = {
     // Solid
-    'SOLID': { name: 'Solid (Düz)', type: 'solid', angle: 0, scale: 1, spacing: 0, category: 'geometric', color: '#808080' },
+    'SOLID': { name: 'Solid', type: 'solid', angle: 0, scale: 1, spacing: 0, category: 'geometric', color: '#808080' },
 
-    // Architectural patterns
-    'ANSI31': { name: 'ANSI31 (Demir)', type: 'lines', angle: 45, scale: 1, spacing: 0.1, category: 'industrial', color: '#4a4a4a' },
-    'ANSI37': { name: 'ANSI37 (Çapraz)', type: 'cross', angle: 45, scale: 1, spacing: 0.1, category: 'industrial', color: '#5a5a5a' },
-    'BRICK': { name: 'Tuğla', type: 'lines', angle: 0, scale: 1, spacing: 0.2, category: 'architectural', color: '#8B4513' },
-    'CONCRETE': { name: 'Beton', type: 'dots', angle: 0, scale: 1, spacing: 0.05, category: 'architectural', color: '#808080' },
-    'TILE': { name: 'Karo/Fayans', type: 'grid', angle: 0, scale: 1, spacing: 0.15, category: 'architectural', color: '#D2B48C' },
-    'STONE': { name: 'Taş', type: 'dots', angle: 0, scale: 1, spacing: 0.08, category: 'architectural', color: '#696969' },
-    'WOOD': { name: 'Ahşap', type: 'lines', angle: 0, scale: 1, spacing: 0.05, category: 'architectural', color: '#8B4513' },
-    'INSULATION': { name: 'Yalıtım', type: 'zigzag', angle: 0, scale: 1, spacing: 0.1, category: 'architectural', color: '#FFD700' },
+    // Architectural patterns - Standard AutoCAD
+    'ANSI31': { name: 'ANSI31 (Iron)', type: 'lines', angle: 45, scale: 1, spacing: 0.1, category: 'industrial', color: '#4a4a4a' },
+    'ANSI32': { name: 'ANSI32 (Steel)', type: 'lines', angle: 45, scale: 1, spacing: 0.05, category: 'industrial', color: '#5a5a5a' },
+    'ANSI33': { name: 'ANSI33 (Bronze)', type: 'lines', angle: 45, scale: 1, spacing: 0.08, category: 'industrial', color: '#cd7f32' }, // dashed lines ideally
+    'ANSI37': { name: 'ANSI37 (Cross)', type: 'cross', angle: 45, scale: 1, spacing: 0.1, category: 'industrial', color: '#5a5a5a' },
+
+    'AR-CONC': { name: 'AR-CONC (Concrete)', type: 'dots', angle: 0, scale: 1, spacing: 0.05, category: 'architectural', color: '#808080' },
+    'AR-SAND': { name: 'AR-SAND (Sand)', type: 'dots', angle: 0, scale: 1, spacing: 0.02, category: 'natural', color: '#C2B280' },
+    'AR-HBONE': { name: 'AR-HBONE (Herringbone)', type: 'zigzag', angle: 45, scale: 1, spacing: 0.1, category: 'architectural', color: '#8B4513' },
+    'AR-PARQ1': { name: 'AR-PARQ1 (Parquet)', type: 'grid', angle: 45, scale: 1, spacing: 0.15, category: 'architectural', color: '#DEB887' },
+    'AR-ROOF': { name: 'AR-ROOF (Roof)', type: 'lines', angle: 0, scale: 1, spacing: 0.2, category: 'architectural', color: '#A52A2A' },
+
+    'BRICK': { name: 'Brick', type: 'lines', angle: 0, scale: 1, spacing: 0.2, category: 'architectural', color: '#8B4513' },
+    'CONCRETE': { name: 'Concrete (Simple)', type: 'dots', angle: 0, scale: 1, spacing: 0.05, category: 'architectural', color: '#808080' },
+    'TILE': { name: 'Tile', type: 'grid', angle: 0, scale: 1, spacing: 0.15, category: 'architectural', color: '#D2B48C' },
+    'STONE': { name: 'Stone', type: 'dots', angle: 0, scale: 1, spacing: 0.08, category: 'architectural', color: '#696969' },
+    'WOOD': { name: 'Wood', type: 'lines', angle: 0, scale: 1, spacing: 0.05, category: 'architectural', color: '#8B4513' },
+    'INSULATION': { name: 'Insulation', type: 'zigzag', angle: 0, scale: 1, spacing: 0.1, category: 'architectural', color: '#FFD700' },
 
     // Industrial patterns
-    'STEEL': { name: 'Çelik', type: 'lines', angle: 45, scale: 1, spacing: 0.08, category: 'industrial', color: '#708090' },
-    'ALUMINUM': { name: 'Alüminyum', type: 'cross', angle: 30, scale: 1, spacing: 0.12, category: 'industrial', color: '#C0C0C0' },
-    'COPPER': { name: 'Bakır', type: 'lines', angle: 60, scale: 1, spacing: 0.1, category: 'industrial', color: '#B87333' },
+    'STEEL': { name: 'Steel', type: 'lines', angle: 45, scale: 1, spacing: 0.08, category: 'industrial', color: '#708090' },
+    'ALUMINUM': { name: 'Aluminum', type: 'cross', angle: 30, scale: 1, spacing: 0.12, category: 'industrial', color: '#C0C0C0' },
+    'COPPER': { name: 'Copper', type: 'lines', angle: 60, scale: 1, spacing: 0.1, category: 'industrial', color: '#B87333' },
 
     // Natural patterns
-    'GRASS': { name: 'Çim', type: 'dots', angle: 0, scale: 1, spacing: 0.03, category: 'natural', color: '#228B22' },
-    'EARTH': { name: 'Toprak', type: 'dots', angle: 0, scale: 1, spacing: 0.06, category: 'natural', color: '#8B4513' },
-    'GRAVEL': { name: 'Çakıl', type: 'dots', angle: 0, scale: 1, spacing: 0.04, category: 'natural', color: '#A0522D' },
-    'SAND': { name: 'Kum', type: 'dots', angle: 0, scale: 1, spacing: 0.02, category: 'natural', color: '#F4A460' },
-    'WATER': { name: 'Su', type: 'wave', angle: 0, scale: 1, spacing: 0.1, category: 'natural', color: '#4169E1' },
+    'GRASS': { name: 'Grass', type: 'dots', angle: 0, scale: 1, spacing: 0.03, category: 'natural', color: '#228B22' },
+    'EARTH': { name: 'Earth/Soil', type: 'dots', angle: 0, scale: 1, spacing: 0.06, category: 'natural', color: '#8B4513' },
+    'GRAVEL': { name: 'Gravel', type: 'dots', angle: 0, scale: 1, spacing: 0.04, category: 'natural', color: '#A0522D' },
+    'WATER': { name: 'Water', type: 'wave', angle: 0, scale: 1, spacing: 0.1, category: 'natural', color: '#4169E1' },
+    'SOIL': { name: 'Toprak Dolgu', type: 'dots', angle: 0, scale: 1, spacing: 0.05, category: 'natural', color: '#654321' },
+    'ROCK': { name: 'Kaya/Kayalık', type: 'dots', angle: 0, scale: 1, spacing: 0.08, category: 'natural', color: '#555555' },
+    'SAND_FILL': { name: 'Kum Dolgu', type: 'dots', angle: 0, scale: 1, spacing: 0.025, category: 'natural', color: '#D2B48C' },
 
     // Geometric patterns
-    'HONEYCOMB': { name: 'Bal Peteği', type: 'honeycomb', angle: 0, scale: 1, spacing: 0.15, category: 'geometric', color: '#FFD700' },
-    'HEXAGON': { name: 'Altıgen', type: 'hexagon', angle: 0, scale: 1, spacing: 0.2, category: 'geometric', color: '#6A5ACD' },
-    'DIAMOND': { name: 'Baklava', type: 'diamond', angle: 45, scale: 1, spacing: 0.15, category: 'geometric', color: '#DC143C' },
-    'ZIGZAG': { name: 'Zikzak', type: 'zigzag', angle: 0, scale: 1, spacing: 0.12, category: 'geometric', color: '#FF6347' },
-    'WAVE': { name: 'Dalga', type: 'wave', angle: 0, scale: 1, spacing: 0.1, category: 'geometric', color: '#00CED1' },
-    'DASH': { name: 'Kesik Çizgi', type: 'dash', angle: 0, scale: 1, spacing: 0.1, category: 'geometric', color: '#2F4F4F' },
-    'DOTS_GRID': { name: 'Nokta Grid', type: 'dots', angle: 0, scale: 1, spacing: 0.1, category: 'geometric', color: '#4B0082' },
+    'HONEYCOMB': { name: 'Honeycomb', type: 'honeycomb', angle: 0, scale: 1, spacing: 0.15, category: 'geometric', color: '#FFD700' },
+    'HEXAGON': { name: 'Hexagon', type: 'hexagon', angle: 0, scale: 1, spacing: 0.2, category: 'geometric', color: '#6A5ACD' },
+    'DIAMOND': { name: 'Diamond', type: 'diamond', angle: 45, scale: 1, spacing: 0.15, category: 'geometric', color: '#DC143C' },
+    'ZIGZAG': { name: 'Zigzag', type: 'zigzag', angle: 0, scale: 1, spacing: 0.12, category: 'geometric', color: '#FF6347' },
+    'WAVE': { name: 'Wave', type: 'wave', angle: 0, scale: 1, spacing: 0.1, category: 'geometric', color: '#00CED1' },
+    'DASH': { name: 'Dashed', type: 'dash', angle: 0, scale: 1, spacing: 0.1, category: 'geometric', color: '#2F4F4F' },
+    'DOTS_GRID': { name: 'Dots Grid', type: 'dots', angle: 0, scale: 1, spacing: 0.1, category: 'geometric', color: '#4B0082' },
+
+    // Additional architectural/construction patterns
+    'CONCRETE_BLOCK': { name: 'Beton Blok', type: 'grid', angle: 0, scale: 1, spacing: 0.25, category: 'architectural', color: '#808080' },
+    'STONE_WALL': { name: 'Taş Duvar', type: 'dots', angle: 0, scale: 1, spacing: 0.1, category: 'architectural', color: '#696969' },
+    'WALL': { name: 'Duvar (Genel)', type: 'lines', angle: 45, scale: 1, spacing: 0.15, category: 'architectural', color: '#A9A9A9' },
+    'MASONRY': { name: 'Yığma/Örme', type: 'grid', angle: 0, scale: 1, spacing: 0.18, category: 'architectural', color: '#BC8F8F' },
+    'PLASTER': { name: 'Sıva', type: 'dots', angle: 0, scale: 1, spacing: 0.02, category: 'architectural', color: '#F5F5DC' },
+    'GROUT': { name: 'Harç', type: 'dots', angle: 0, scale: 1, spacing: 0.035, category: 'architectural', color: '#C0C0C0' },
 };
 
 /**
@@ -64,6 +85,11 @@ export const getPatternTexture = (patternName: string, color: string, scale: num
 
     const config = PRESET_PATTERNS[patternName];
     if (!config) return null;
+
+    // Custom Image Support: Direct Return of Image Data
+    if (config.type === 'custom_image' && config.imageData) {
+        return config.imageData;
+    }
 
     let SIZE = 64;
 
@@ -324,3 +350,19 @@ export const getPatternPreview = (patternName: string, size: number = 32): strin
     return texture;
 };
 
+/**
+ * Add a custom image pattern to the registry
+ */
+export const addCustomPattern = (name: string, imageData: string) => {
+    const id = `CUSTOM_${Date.now()}`;
+    PRESET_PATTERNS[id] = {
+        name: name,
+        type: 'custom_image',
+        angle: 0,
+        scale: 1,
+        spacing: 1, // Not used for images but required by type
+        category: 'custom',
+        imageData: imageData
+    };
+    return id;
+};

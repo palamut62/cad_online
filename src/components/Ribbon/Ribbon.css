@@ -7,6 +7,61 @@
     flex-shrink: 0;
 }
 
+/* Quick Access Toolbar */
+.quick-access-toolbar {
+    display: flex;
+    align-items: center;
+    background-color: var(--header-bg);
+    padding: 2px 8px;
+    gap: 2px;
+    height: 28px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.qat-btn {
+    background: transparent;
+    border: none;
+    color: #bbb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.qat-btn:hover {
+    background: rgba(76, 194, 255, 0.15);
+    color: #4cc2ff;
+}
+
+.qat-btn:active {
+    background: rgba(76, 194, 255, 0.25);
+}
+
+.qat-btn svg {
+    font-size: 14px;
+}
+
+.qat-separator {
+    width: 1px;
+    height: 16px;
+    background: rgba(255, 255, 255, 0.15);
+    margin: 0 6px;
+}
+
+.qat-filename {
+    color: #888;
+    font-size: 11px;
+    font-family: 'Segoe UI', sans-serif;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+}
+
 .ribbon-tabs {
     display: flex;
     background-color: var(--header-bg);
@@ -451,24 +506,25 @@
 
 /* ========================================
    HATCH EDITOR STYLES - Professional UI
+   Matching other Ribbon panel styles
    ======================================== */
 
 .hatch-editor-group {
-    gap: 8px;
+    gap: 6px;
     overflow-x: auto;
 }
 
 .hatch-pattern-panel {
-    min-width: 320px;
-    max-width: 400px;
+    min-width: 280px;
+    max-width: 360px;
 }
 
 .hatch-categories {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    padding: 4px;
-    max-height: 70px;
+    gap: 6px;
+    padding: 2px;
+    max-height: 65px;
     overflow-y: auto;
 }
 
@@ -482,17 +538,20 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    font-size: 9px;
-    color: #888;
-    padding: 2px 0;
+    font-size: 8px;
+    color: #999;
+    padding: 1px 0;
+    font-family: 'Segoe UI', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
 }
 
 .category-icon {
-    font-size: 10px;
+    font-size: 9px;
 }
 
 .category-name {
-    font-weight: 500;
+    font-weight: 600;
 }
 
 .pattern-grid {
@@ -538,22 +597,23 @@
 .hatch-color-controls {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 6px;
+    gap: 4px;
+    padding: 4px;
 }
 
 .color-picker-row,
 .opacity-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 10px;
+    gap: 4px;
+    font-size: 9px;
+    font-family: 'Segoe UI', sans-serif;
 }
 
 .color-picker-row label,
 .opacity-row label {
-    min-width: 45px;
-    color: #aaa;
+    min-width: 40px;
+    color: #999;
 }
 
 .hatch-color-input {
@@ -599,26 +659,27 @@
 
 /* Transform Panel */
 .hatch-transform-panel {
-    min-width: 160px;
+    min-width: 140px;
 }
 
 .hatch-transform-controls {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 6px;
+    gap: 4px;
+    padding: 4px;
 }
 
 .transform-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 10px;
+    gap: 4px;
+    font-size: 9px;
+    font-family: 'Segoe UI', sans-serif;
 }
 
 .transform-row label {
-    min-width: 35px;
-    color: #aaa;
+    min-width: 32px;
+    color: #999;
 }
 
 .hatch-scale-slider,
@@ -706,4 +767,210 @@
 
 .tool-btn.settings-btn svg {
     color: #ffcc00;
+}
+
+/* Hatch Editor Specific Styles */
+.hatch-editor-group {
+    background: #252526;
+    border-radius: 4px;
+    margin: 2px;
+    border: 1px solid #3e3e42;
+}
+
+.hatch-pattern-panel {
+    border-right: 1px solid #3e3e42;
+    padding: 0 4px;
+    display: flex;
+    flex-direction: column;
+    min-width: 280px;
+}
+
+.hatch-categories {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 4px;
+    max-width: 400px;
+    scrollbar-width: thin;
+    scrollbar-color: #555 #2d2d30;
+}
+
+.hatch-category {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-right: 1px solid #333;
+    padding-right: 8px;
+    min-width: 140px;
+}
+
+.hatch-category:last-child {
+    border-right: none;
+}
+
+.category-header {
+    font-size: 10px;
+    color: #4cc2ff;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+}
+
+.pattern-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+}
+
+.pattern-btn {
+    width: 32px;
+    height: 32px;
+    padding: 2px;
+    border: 1px solid transparent;
+    background: #333;
+    cursor: pointer;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.pattern-btn:hover {
+    background: #444;
+    border-color: #666;
+}
+
+.pattern-btn.selected {
+    background: #1e1e1e;
+    border-color: #4cc2ff;
+    box-shadow: 0 0 0 1px #4cc2ff;
+}
+
+.pattern-preview {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    image-rendering: pixelated;
+}
+
+.hatch-color-panel,
+.hatch-transform-panel,
+.hatch-info-panel {
+    min-width: 140px;
+}
+
+.hatch-color-controls,
+.hatch-transform-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 4px;
+}
+
+.color-picker-row,
+.opacity-row,
+.transform-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: #ccc;
+}
+
+.color-picker-row label,
+.opacity-row label,
+.transform-row label {
+    width: 45px;
+    color: #999;
+}
+
+.hatch-color-input {
+    width: 40px;
+    height: 20px;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    background: none;
+}
+
+.hatch-opacity-slider,
+.hatch-scale-slider,
+.hatch-angle-slider {
+    flex: 1;
+    height: 4px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: #444;
+    border-radius: 2px;
+}
+
+.hatch-opacity-slider::-webkit-slider-thumb,
+.hatch-scale-slider::-webkit-slider-thumb,
+.hatch-angle-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #4cc2ff;
+    cursor: pointer;
+    border: 2px solid #2d2d30;
+}
+
+.hatch-scale-input,
+.hatch-angle-input {
+    width: 45px;
+    background: #1e1e1e;
+    border: 1px solid #3e3e42;
+    color: #fff;
+    padding: 2px 4px;
+    font-size: 10px;
+    border-radius: 2px;
+    text-align: right;
+}
+
+.color-hex,
+.opacity-value,
+.angle-unit {
+    font-family: 'Consolas', monospace;
+    font-size: 10px;
+    color: #888;
+    min-width: 30px;
+}
+
+.hatch-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    margin-top: 4px;
+}
+
+.selected-pattern-preview {
+    background: #fff;
+    padding: 2px;
+    border-radius: 2px;
+}
+
+.selected-pattern-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.pattern-name-display {
+    font-weight: 600;
+    color: #fff;
+    font-size: 11px;
+}
+
+.pattern-type-display {
+    color: #888;
+    font-size: 10px;
 }

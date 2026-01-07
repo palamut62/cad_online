@@ -26,15 +26,15 @@ interface TextInputDialogProps {
 }
 
 const PRESET_COLORS = [
-    { value: '#ffffff', label: 'Beyaz' },
-    { value: '#ff0000', label: 'Kırmızı' },
-    { value: '#ffff00', label: 'Sarı' },
-    { value: '#00ff00', label: 'Yeşil' },
+    { value: '#ffffff', label: 'White' },
+    { value: '#ff0000', label: 'Red' },
+    { value: '#ffff00', label: 'Yellow' },
+    { value: '#00ff00', label: 'Green' },
     { value: '#00ffff', label: 'Cyan' },
-    { value: '#0000ff', label: 'Mavi' },
+    { value: '#0000ff', label: 'Blue' },
     { value: '#ff00ff', label: 'Magenta' },
-    { value: '#ff8000', label: 'Turuncu' },
-    { value: '#808080', label: 'Gri' },
+    { value: '#ff8000', label: 'Orange' },
+    { value: '#808080', label: 'Gray' },
 ];
 
 const TextInputDialog: React.FC<TextInputDialogProps> = ({ isOpen, onClose, onSubmit, initialValues, mode }) => {

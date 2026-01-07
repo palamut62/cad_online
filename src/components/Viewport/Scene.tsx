@@ -477,35 +477,95 @@ const PrintWindowBoxRenderer = () => {
     );
 };
 
-// Dinamik Grid - kamerayı takip eder
+// Dinamik ve Uyarlanabilir Grid - AutoCAD Style
 const DynamicGrid = () => {
     const { camera } = useThree();
-    const gridRef = useRef<THREE.GridHelper>(null);
+    const { gridEnabled } = useDrawing();
+
+    // Refs for grid layers
+    const minorGridRef = useRef<THREE.GridHelper>(null);
+    const majorGridRef = useRef<THREE.GridHelper>(null);
+    const giantGridRef = useRef<THREE.GridHelper>(null);
 
     useFrame(() => {
-        if (!gridRef.current) return;
-
+        if (!gridEnabled) return;
         const orthoCamera = camera as THREE.OrthographicCamera;
         if (!orthoCamera.isOrthographicCamera) return;
 
-        // Grid'i kamera pozisyonuna taşı (X ve Y), Z=-10 arkada kalması için
-        const gridStep = 100; // Grid snap step
-        gridRef.current.position.x = Math.round(camera.position.x / gridStep) * gridStep;
-        gridRef.current.position.y = Math.round(camera.position.y / gridStep) * gridStep;
-        gridRef.current.position.z = -10; // Çizimlerin en arkasında
+        const zoom = orthoCamera.zoom;
+
+        // Viewport boyutlarını dünya koordinatlarında hesapla
+        const vHeight = (orthoCamera.top - orthoCamera.bottom) / zoom;
+        const vWidth = (orthoCamera.right - orthoCamera.left) / zoom;
+        const maxDim = Math.max(vWidth, vHeight);
+
+        // Grid boyutu görünür alanın 3 katı olsun ki pan yapınca hemen bitmesin
+        const dynamicSize = maxDim * 3;
+
+        // Ekranda bir çizginin yaklaşık kaç piksel yer kapladığını hesapla (adaptive density)
+        // 10 birimlik gridler arası mesafe: 10 * zoom piksel
+        const minorVisible = 10 * zoom > 8; // 8 pikselden büyükse göster
+        const majorVisible = 100 * zoom > 8;
+        const giantVisible = 1000 * zoom > 8;
+
+        // Grid'i kamera pozisyonun snap'leyerek taşı => Sonsuzluk ilüzyonu
+        // En büyük görünür step'e göre snaple ki çizgiler titremesin
+        const snapStep = giantVisible ? 1000 : (majorVisible ? 100 : 10);
+        const snapX = Math.round(camera.position.x / snapStep) * snapStep;
+        const snapY = Math.round(camera.position.y / snapStep) * snapStep;
+
+        // GridHelper base size = 4000. dynamicSize'a göre scale et.
+        const baseSize = 4000;
+        const scale = dynamicSize / baseSize;
+
+        if (minorGridRef.current) {
+            minorGridRef.current.visible = minorVisible;
+            minorGridRef.current.position.set(snapX, snapY, -10.1);
+            minorGridRef.current.scale.set(scale, scale, 1);
+        }
+        if (majorGridRef.current) {
+            majorGridRef.current.visible = majorVisible;
+            majorGridRef.current.position.set(snapX, snapY, -10);
+            majorGridRef.current.scale.set(scale, scale, 1);
+        }
+        if (giantGridRef.current) {
+            giantGridRef.current.visible = giantVisible;
+            giantGridRef.current.position.set(snapX, snapY, -9.9);
+            giantGridRef.current.scale.set(scale, scale, 1);
+        }
     });
 
-    // Çok büyük grid - her zaman görünür olsun
+    if (!gridEnabled) return null;
+
+    // AutoCAD Renkleri
+    // Minor: #2A2A2A | Major: #3A3A3A | Giant: #4A4A4A
     return (
-        <gridHelper
-            ref={gridRef}
-            args={[100000, 1000, 0x334455, 0x222a33]} // Subtle blue-grey grid
-            rotation={[Math.PI / 2, 0, 0]}
-            position={[0, 0, -10]}
-            renderOrder={-999} // En altta çizilmesi için
-        />
+        <>
+            {/* Minor Grid (Step 10) */}
+            <gridHelper
+                ref={minorGridRef}
+                args={[4000, 400, 0x2A2A2A, 0x2A2A2A]}
+                rotation={[Math.PI / 2, 0, 0]}
+                renderOrder={-1001}
+            />
+            {/* Major Grid (Step 100) */}
+            <gridHelper
+                ref={majorGridRef}
+                args={[4000, 40, 0x3A3A3A, 0x3A3A3A]}
+                rotation={[Math.PI / 2, 0, 0]}
+                renderOrder={-1000}
+            />
+            {/* Giant Grid (Step 1000) */}
+            <gridHelper
+                ref={giantGridRef}
+                args={[4000, 4, 0x4A4A4A, 0x4A4A4A]}
+                rotation={[Math.PI / 2, 0, 0]}
+                renderOrder={-999}
+            />
+        </>
     );
 };
+
 
 const Scene = () => {
     return (
@@ -537,7 +597,7 @@ const Scene = () => {
 
             {/* Dynamic Grid on XY Plane - follows camera, behind entities */}
             <DynamicGrid />
-            <axesHelper args={[5]} />
+
 
             <InteractionPlane />
             <EntitiesRenderer />

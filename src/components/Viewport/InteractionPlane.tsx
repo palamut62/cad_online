@@ -220,7 +220,6 @@ const InteractionPlane = React.memo(() => {
                     }
                 } else if (Math.abs(d - minD) < 2 && priority < bestPriority) {
                     // Mesafeler çok yakın (< 2 birim fark), önceliğe göre seç
-                    // Bu sayede HATCH içinde LWPOLYLINE kenarına yakın tıklandığında LWPOLYLINE seçilir
                     bestEntId = ent.id;
                     bestPriority = priority;
                 }

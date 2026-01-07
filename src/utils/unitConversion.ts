@@ -28,13 +28,13 @@ export function getUnitLabel(unit: DrawingUnit): string {
 export function getUnitFullName(unit: DrawingUnit): string {
     switch (unit) {
         case 'mm':
-            return 'Milimetre';
+            return 'Millimeter';
         case 'cm':
-            return 'Santimetre';
+            return 'Centimeter';
         case 'm':
-            return 'Metre';
+            return 'Meter';
         case 'inch':
-            return 'İnç';
+            return 'Inch';
         case 'feet':
             return 'Feet';
         default:
