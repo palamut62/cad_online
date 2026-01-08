@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import { AGENT_DESCRIPTIONS, AgentHistoryEntry } from '../../types/aiTypes';
 import { useAI } from '../../context/AIContext';
+import { useNotification } from '../../context/NotificationContext';
 
 interface AgentHistoryDialogProps {
     isOpen: boolean;
@@ -10,6 +11,7 @@ interface AgentHistoryDialogProps {
 
 const AgentHistoryDialog: React.FC<AgentHistoryDialogProps> = ({ isOpen, onClose }) => {
     const { agentHistory, clearHistory, deleteHistoryEntry } = useAI();
+    const { showInfo } = useNotification();
     const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
     const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
 
@@ -66,7 +68,7 @@ const AgentHistoryDialog: React.FC<AgentHistoryDialogProps> = ({ isOpen, onClose
         });
 
         navigator.clipboard.writeText(fullText).then(() => {
-            alert('Full conversation copied to clipboard!');
+            showInfo('Kopyalandı', 'Tüm görüşme panoya kopyalandı!');
         });
     };
 

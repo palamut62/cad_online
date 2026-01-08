@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { PRESET_PATTERNS, PATTERN_CATEGORIES, getPatternPreview, addCustomPattern, deleteCustomPattern } from '../../utils/hatchPatterns';
+import { useNotification } from '../../context/NotificationContext';
 import './HatchDialog.css';
 
 interface HatchDialogProps {
@@ -39,6 +40,7 @@ const HatchDialog: React.FC<HatchDialogProps> = ({
     const [activeCategory, setActiveCategory] = useState<string>('architectural');
     const [refreshTrigger, setRefreshTrigger] = useState(0); // Force re-render when new patterns added
     const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const { showConfirm } = useNotification();
 
     // Reset to defaults when dialog opens or params change
     useEffect(() => {
@@ -122,8 +124,9 @@ const HatchDialog: React.FC<HatchDialogProps> = ({
         reader.readAsDataURL(file);
     };
 
-    const handleDeletePattern = (patternKey: string) => {
-        if (confirm('Are you sure you want to delete this pattern?')) {
+    const handleDeletePattern = async (patternKey: string) => {
+        const confirmed = await showConfirm('Desen Sil', 'Bu deseni silmek istediğinize emin misiniz?');
+        if (confirmed) {
             deleteCustomPattern(patternKey);
             setRefreshTrigger(prev => prev + 1);
             if (selectedPattern === patternKey) {

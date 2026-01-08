@@ -37,7 +37,6 @@ export type EntityType =
   | 'XLINE'
   | 'DONUT'
   | 'TEXT'
-  | 'MTEXT'
   | 'DIMENSION'
   | 'HATCH'
   | 'BLOCK_REFERENCE'
@@ -160,22 +159,6 @@ export interface TextEntity extends BaseEntity {
   annotative?: boolean; // Ölçek bağımsız mı?
 }
 
-export interface MTextEntity extends BaseEntity {
-  type: 'MTEXT';
-  position: Point;
-  text: string;
-  width: number;
-  height: number;
-  rotation?: number;
-  style?: string;
-  lineSpacing?: number;
-  lineSpacingStyle?: 'atLeast' | 'exact'; // Satır aralığı stili
-  attachment?: 'topLeft' | 'topCenter' | 'topRight' | 'middleLeft' | 'middleCenter' | 'middleRight' | 'bottomLeft' | 'bottomCenter' | 'bottomRight';
-  textStyle?: TextStyle;
-  backgroundColor?: string;
-  backgroundFill?: boolean;
-}
-
 export interface DimensionEntity extends BaseEntity {
   type: 'DIMENSION';
   dimType: DimensionType;
@@ -260,7 +243,6 @@ export type Entity =
   | XlineEntity
   | DonutEntity
   | TextEntity
-  | MTextEntity
   | DimensionEntity
   | HatchEntity
   | BlockReferenceEntity

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useDrawing } from '../../context/DrawingContext';
+import { useNotification } from '../../context/NotificationContext';
 import './SheetTabs.css';
 
 const SheetTabs = () => {
@@ -11,6 +12,8 @@ const SheetTabs = () => {
         switchSheet,
         renameSheet
     } = useDrawing();
+
+    const { showConfirm } = useNotification();
 
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
@@ -44,11 +47,12 @@ const SheetTabs = () => {
         }
     };
 
-    const handleCloseClick = (e: React.MouseEvent, id: string) => {
+    const handleCloseClick = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
         const sheet = sheets.find(s => s.id === id);
         if (sheet?.isModified) {
-            if (!window.confirm(`"${sheet.name}" değiştirilmiş. Kapatmak istediğinize emin misiniz?`)) {
+            const confirmed = await showConfirm('Uyarı', `"${sheet.name}" değiştirilmiş. Kapatmak istediğinize emin misiniz?`);
+            if (!confirmed) {
                 return;
             }
         }

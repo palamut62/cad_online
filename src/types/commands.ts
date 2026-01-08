@@ -44,7 +44,6 @@ export type CommandType =
   | 'DIMBASELINE'
   // Text commands
   | 'TEXT'
-  | 'MTEXT'
   | 'LEADER'
   // Block commands
   | 'BLOCK'
@@ -161,8 +160,6 @@ export const COMMAND_ALIASES: Record<string, CommandType> = {
   'DIMBASELINE': 'DIMBASELINE',
   'DT': 'TEXT',
   'TEXT': 'TEXT',
-  'MT': 'MTEXT',
-  'MTEXT': 'MTEXT',
   'LEADER': 'LEADER',
   'B': 'BLOCK',
   'BLOCK': 'BLOCK',

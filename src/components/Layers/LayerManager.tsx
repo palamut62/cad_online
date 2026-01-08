@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useDrawing } from '../../context/DrawingContext';
+import { useNotification } from '../../context/NotificationContext';
 import { Layer } from '../../types/layers';
 import { ACI_COLORS } from '../../types/layers';
 import './LayerManager.css';
@@ -19,6 +20,8 @@ const LayerManager: React.FC<LayerManagerProps> = ({ onClose }) => {
         updateLayer,
         setActiveLayerId
     } = useDrawing();
+
+    const { showConfirm } = useNotification();
 
     const [newLayerName, setNewLayerName] = useState('');
     const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
@@ -180,9 +183,10 @@ const LayerManager: React.FC<LayerManagerProps> = ({ onClose }) => {
                             {layer.name !== '0' && (
                                 <button
                                     className="delete-btn"
-                                    onClick={(e) => {
+                                    onClick={async (e) => {
                                         e.stopPropagation();
-                                        if (confirm(`Delete layer ${layer.name}?`)) {
+                                        const confirmed = await showConfirm('Katman Sil', `${layer.name} katmanını silmek istiyor musunuz?`);
+                                        if (confirmed) {
                                             removeLayer(layer.id);
                                         }
                                     }}

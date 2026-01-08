@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { useAI } from '../../context/AIContext';
+import { useNotification } from '../../context/NotificationContext';
 import { AgentType, AGENT_DESCRIPTIONS } from '../../types/aiTypes';
 
 interface ApplicationSettingsDialogProps {
@@ -21,6 +22,8 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
         availableModels, refreshModels, isLoading, error, testModel,
         useMultiAgent, setUseMultiAgent, agentsConfig, setAgentConfig, resetAgentsConfig
     } = useAI();
+
+    const { showWarning } = useNotification();
 
     // Agent test state
     const [agentTestResults, setAgentTestResults] = useState<Record<string, { success: boolean; message: string } | null>>({});
@@ -573,7 +576,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                             <button
                                                 onClick={async () => {
                                                     if (!apiKey) {
-                                                        alert('API Key required!');
+                                                        showWarning('Uyarı', 'API Key gerekli!');
                                                         return;
                                                     }
                                                     setIsTestingAgents(true);
@@ -620,7 +623,7 @@ const ApplicationSettingsDialog: React.FC<ApplicationSettingsDialogProps> = ({ i
                                             <button
                                                 onClick={async () => {
                                                     if (!apiKey) {
-                                                        alert('API Key required!');
+                                                        showWarning('Uyarı', 'API Key gerekli!');
                                                         return;
                                                     }
                                                     setIsRefreshingAgentModels(true);

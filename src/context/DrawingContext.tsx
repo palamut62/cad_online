@@ -248,6 +248,11 @@ interface DrawingContextValue {
     isOpen: boolean;
   }>>;
 
+  // Drag and Drop State
+  isDragging: boolean;
+  dragStartPoint: Point | null;
+  dragBaseEntities: Map<number, Entity>; // Snapshot of entities before drag
+
   // Dimension Edit Dialog State
   dimensionEditDialogState: {
     isOpen: boolean;
@@ -404,6 +409,11 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     callback?: (data: any) => void;
     editMode?: boolean;
   }>({ isOpen: false });
+
+  // Drag and Drop State
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartPoint, setDragStartPoint] = useState<Point | null>(null);
+  const [dragBaseEntities, setDragBaseEntities] = useState<Map<number, Entity>>(new Map());
 
   // Dimension Settings Dialog State
   const [dimensionSettingsDialogState, setDimensionSettingsDialogState] = useState<{
@@ -929,8 +939,35 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     setStep(1);
     setTempPoints([]);
     setCommandState({});
-    if (['LINE', 'CIRCLE', 'POLYLINE', 'RECTANGLE', 'POLYGON', 'ARC', 'SPLINE', 'ELLIPSE', 'POINT', 'RAY', 'XLINE', 'DONUT', 'TEXT', 'MTEXT', 'DIMLINEAR', 'DIMALIGNED', 'DIMANGULAR', 'DIMRADIUS', 'DIMDIAMETER', 'HATCH'].includes(cmd)) {
+    if (['LINE', 'CIRCLE', 'POLYLINE', 'RECTANGLE', 'POLYGON', 'ARC', 'SPLINE', 'ELLIPSE', 'POINT', 'RAY', 'XLINE', 'DONUT', 'DIMLINEAR', 'DIMALIGNED', 'DIMANGULAR', 'DIMRADIUS', 'DIMDIAMETER', 'HATCH'].includes(cmd)) {
       setSelectedIds(new Set());
+    }
+
+    // TEXT command: Open editor immediately, then place on click
+    if (cmd === 'TEXT') {
+      setSelectedIds(new Set());
+      setInPlaceTextEditorState({
+        isOpen: true,
+        position: [0, 0, 0], // Temporary position - will be updated on placement
+        initialText: '',
+        style: { height: 10, rotation: 0, fontFamily: 'Arial', color: '#FFFFFF' },
+        onSubmit: (text: string, style?: any) => {
+          if (text.trim()) {
+            // Store text and style in commandState, wait for click to place
+            setCommandState({
+              pendingText: text,
+              pendingStyle: style
+            });
+            setStep(2); // Now waiting for placement click
+          } else {
+            cancelCommand();
+          }
+          setInPlaceTextEditorState(prev => ({ ...prev, isOpen: false }));
+        },
+        onCancel: () => {
+          cancelCommand();
+        }
+      });
     }
 
     // Quick Trim/Extend Mode: Skip manual boundary selection
@@ -1189,16 +1226,42 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   const handlePointerDown = useCallback((point: Point) => {
     // Start window selection if:
     // 1. No active command
-    // 2. Not hovering over a grip (handled elsewhere usually, but if here, we check activeGrip null)
-    // 3. Not actively snapping to an object? AutoCad snaps still work for selection, but clicking ON object selects it.
-    // If we click on empty space, we start box.
+    // 2. Not hovering over a grip
     if (!activeCommand && !activeGrip) {
-      // Check if we clicked on an entity first (Direct Selection)
-      // Actually, AutoCAD logic: Click down. If mouse doesn't move much and Up -> Click. If moves -> Drag.
-      // Let's implement that in pointerUp or by tracking movement.
-      selectionStartRef.current = point;
+      let bestSelectedDist = Infinity;
+      let bestSelectedId: number | null = null;
+
+      // Check selected entities first with generous tolerance
+      entities.forEach(ent => {
+        if (ent.visible === false) return;
+        if (selectedIds.has(ent.id)) {
+          const d = closestPointOnEntity(point[0], point[1], ent);
+          if (d < bestSelectedDist) {
+            bestSelectedDist = d;
+            bestSelectedId = ent.id;
+          }
+        }
+      });
+
+      const HIT_THRESHOLD = 15.0; // Match InteractionPlane tolerance
+
+      if (bestSelectedDist < HIT_THRESHOLD && bestSelectedId !== null) {
+        // Clicked on (or near) a selected entity -> Prepare for Drag
+        setDragStartPoint(point);
+        setIsDragging(false);
+
+        const snapshot = new Map<number, Entity>();
+        selectedIds.forEach(id => {
+          const ent = entities.find(e => e.id === id);
+          if (ent) snapshot.set(id, { ...ent });
+        });
+        setDragBaseEntities(snapshot);
+      } else {
+        // Start Box Selection
+        selectionStartRef.current = point;
+      }
     }
-  }, [activeCommand, activeGrip]);
+  }, [activeCommand, activeGrip, selectedIds, entities]);
 
   const updateSelectionBox = useCallback((start: Point, end: Point) => {
     const mode = end[0] > start[0] ? 'WINDOW' : 'CROSSING';
@@ -1206,6 +1269,16 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   }, []);
 
   const handlePointerUp = useCallback(() => {
+    // Finish Entity Dragging
+    if (isDragging) {
+      setIsDragging(false);
+      setDragStartPoint(null);
+      setDragBaseEntities(new Map());
+      createHistoryItem('MOVE' as CommandType);
+      console.log('Finished dragging');
+      return;
+    }
+
     if (selectionStartRef.current) {
       if (selectionBox) {
         // End Box Selection
@@ -1340,6 +1413,57 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       setEntities(prev => prev.map(e => e.id === entityId ? (newEnt as Entity) : e));
       setCursorPosition(point); // Update cursor visual
       return;
+    }
+
+    // Entity Drag Logic
+    if (dragStartPoint && dragBaseEntities.size > 0) {
+      // Threshold check to differentiate Click vs Drag
+      if (!isDragging) {
+        const dist = Math.hypot(point[0] - dragStartPoint[0], point[1] - dragStartPoint[1]);
+        const DRAG_THRESHOLD = 2.0; // World units
+        if (dist > DRAG_THRESHOLD) {
+          setIsDragging(true);
+        } else {
+          // Waiting for movement threshold
+          setCursorPosition(point);
+          return;
+        }
+      }
+
+      if (isDragging) {
+        const dx = point[0] - dragStartPoint[0];
+        const dy = point[1] - dragStartPoint[1];
+
+        dragBaseEntities.forEach((baseEnt, id) => {
+          const newEnt = { ...baseEnt };
+
+          if (baseEnt.type === 'LINE') {
+            (newEnt as any).start = translatePt((baseEnt as any).start, dx, dy);
+            (newEnt as any).end = translatePt((baseEnt as any).end, dx, dy);
+          } else if (baseEnt.type === 'CIRCLE' || baseEnt.type === 'ARC' || baseEnt.type === 'ELLIPSE' || baseEnt.type === 'DONUT') {
+            (newEnt as any).center = translatePt((baseEnt as any).center, dx, dy);
+          } else if (baseEnt.type === 'LWPOLYLINE') {
+            (newEnt as any).vertices = (baseEnt as any).vertices.map((v: Point) => translatePt(v, dx, dy));
+          } else if (baseEnt.type === 'POINT' || baseEnt.type === 'TEXT' || baseEnt.type === 'TABLE' || baseEnt.type === 'BLOCK_REFERENCE' || baseEnt.type === 'INSERT') {
+            (newEnt as any).position = translatePt((baseEnt as any).position, dx, dy);
+          } else if (baseEnt.type === 'RAY' || baseEnt.type === 'XLINE') {
+            (newEnt as any).origin = translatePt((baseEnt as any).origin, dx, dy);
+          } else if (baseEnt.type === 'HATCH') {
+            if ((baseEnt as any).boundary?.vertices) {
+              (newEnt as any).boundary.vertices = (baseEnt as any).boundary.vertices.map((v: Point) => translatePt(v, dx, dy));
+            }
+          } else if (baseEnt.type === 'DIMENSION') {
+            if ((baseEnt as any).start) (newEnt as any).start = translatePt((baseEnt as any).start, dx, dy);
+            if ((baseEnt as any).end) (newEnt as any).end = translatePt((baseEnt as any).end, dx, dy);
+            if ((baseEnt as any).dimLinePosition) (newEnt as any).dimLinePosition = translatePt((baseEnt as any).dimLinePosition, dx, dy);
+          }
+
+          updateEntityTransient(id, newEnt);
+        });
+
+        setCursorPosition(point);
+        return;
+      }
     }
 
     // Selection Box Logic
@@ -1790,70 +1914,27 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         setCommandState({});
       }
     } else if (activeCommand === 'TEXT') {
-      if (step === 1) {
-        setTempPoints([point]);
-        setStep(2);
-
-        // Open In-Place Text Editor instead of dialog (AutoCAD style)
-        setInPlaceTextEditorState({
-          isOpen: true,
+      // Step 2: Place the text at clicked position
+      if (step === 2 && commandState.pendingText) {
+        const pendingStyle = commandState.pendingStyle || {};
+        captureBeforeState();
+        addEntity({
+          type: 'TEXT',
           position: point,
-          initialText: '',
-          style: { height: 10, rotation: 0, fontFamily: 'Arial', color: '#FFFFFF' },
-          onSubmit: (text: string, style?: any) => {
-            if (text.trim()) {
-              captureBeforeState();
-              addEntity({
-                type: 'TEXT',
-                position: point,
-                text: text,
-                height: style?.height || 10,
-                rotation: 0,
-                color: style?.color || '#FFFFFF',
-                layer: '0',
-                justification: style?.justification || 'left',
-                textStyle: {
-                  fontFamily: style?.fontFamily || 'Arial',
-                  fontWeight: style?.fontWeight || 'normal',
-                  fontStyle: style?.fontStyle || 'normal'
-                }
-              });
-              createHistoryItem('TEXT' as CommandType);
-            }
-            cancelCommand();
-          },
-          onCancel: () => {
-            cancelCommand();
+          text: commandState.pendingText,
+          height: pendingStyle.height || 10,
+          rotation: 0,
+          color: pendingStyle.color || '#FFFFFF',
+          layer: '0',
+          justification: pendingStyle.justification || 'left',
+          textStyle: {
+            fontFamily: pendingStyle.fontFamily || 'Arial',
+            fontWeight: pendingStyle.fontWeight || 'normal',
+            fontStyle: pendingStyle.fontStyle || 'normal'
           }
         });
-      }
-    } else if (activeCommand === 'MTEXT') {
-      if (step === 1) {
-        setTempPoints([point]);
-        setStep(2);
-      } else if (step === 2) {
-        // Second point defines width
-        const p1 = tempPoints[0];
-        const width = Math.abs(point[0] - p1[0]);
-
-        // Open Dialog for MText content
-        setTextDialogState({
-          isOpen: true,
-          mode: 'MTEXT',
-          initialValues: { height: 10 },
-          callback: (data) => {
-            addEntity({
-              type: 'MTEXT',
-              position: [Math.min(p1[0], point[0]), Math.max(p1[1], point[1]), 0], // Top-left
-              width: width,
-              text: data.text,
-              height: data.height,
-              color: '#fff',
-              layer: '0'
-            });
-            cancelCommand();
-          }
-        });
+        createHistoryItem('TEXT' as CommandType);
+        cancelCommand();
       }
     } else if (activeCommand === 'TABLE') {
       if (step === 1) {
@@ -1926,7 +2007,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             (newEnt as any).center = translatePt((ent as any).center, dx, dy);
           } else if (ent.type === 'LWPOLYLINE') {
             (newEnt as any).vertices = (ent as any).vertices.map((v: Point) => translatePt(v, dx, dy));
-          } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE' || ent.type === 'BLOCK_REFERENCE' || ent.type === 'INSERT') {
+          } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'TABLE' || ent.type === 'BLOCK_REFERENCE' || ent.type === 'INSERT') {
             (newEnt as any).position = translatePt((ent as any).position, dx, dy);
           } else if (ent.type === 'HATCH') {
             if ((ent as any).boundary?.vertices) {
@@ -1984,7 +2065,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             (newEnt as any).center = translatePt((ent as any).center, dx, dy);
           } else if (ent.type === 'LWPOLYLINE') {
             (newEnt as any).vertices = (ent as any).vertices.map((v: Point) => translatePt(v, dx, dy));
-          } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE' || ent.type === 'BLOCK_REFERENCE' || ent.type === 'INSERT') {
+          } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'TABLE' || ent.type === 'BLOCK_REFERENCE' || ent.type === 'INSERT') {
             (newEnt as any).position = translatePt((ent as any).position, dx, dy);
           } else if (ent.type === 'HATCH') {
             if ((ent as any).boundary?.vertices) {
@@ -2064,7 +2145,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
               (newEnt as any).boundary.vertices = (ent as any).boundary.vertices.map((v: Point) => rotatePt(v, cx, cy, angle));
             }
             (newEnt as any).rotation = ((newEnt as any).rotation || 0) + angle;
-          } else if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+          } else if (ent.type === 'TEXT') {
             (newEnt as any).position = rotatePt((ent as any).position, cx, cy, angle);
             (newEnt as any).rotation = ((newEnt as any).rotation || 0) + angle;
           } else if (ent.type === 'TABLE') {
@@ -2150,10 +2231,6 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           } else if (ent.type === 'TEXT') {
             (newEnt as any).position = scalePt((ent as any).position, base[0], base[1], factor);
             (newEnt as any).height *= factor;
-          } else if (ent.type === 'MTEXT') {
-            (newEnt as any).position = scalePt((ent as any).position, base[0], base[1], factor);
-            (newEnt as any).height *= factor;
-            (newEnt as any).width *= factor;
           } else if (ent.type === 'POINT') {
             (newEnt as any).position = scalePt((ent as any).position, base[0], base[1], factor);
           } else if (ent.type === 'DONUT') {
@@ -2234,7 +2311,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             if ((ent as any).boundary?.vertices) {
               (newEnt as any).boundary.vertices = (ent as any).boundary.vertices.map((v: Point) => mirrorPt(v, p1[0], p1[1], p2[0], p2[1]));
             }
-          } else if (ent.type === 'TABLE' || ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT') {
+          } else if (ent.type === 'TABLE' || ent.type === 'POINT' || ent.type === 'TEXT') {
             (newEnt as any).position = mirrorPt((ent as any).position, p1[0], p1[1], p2[0], p2[1]);
           }
           addEntity(newEnt);
@@ -3550,7 +3627,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
                   (newEnt as any).center = translatePt((ent as any).center, dx, dy);
                 } else if (ent.type === 'LWPOLYLINE') {
                   (newEnt as any).vertices = (ent as any).vertices.map((v: Point) => translatePt(v, dx, dy));
-                } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+                } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'TABLE') {
                   (newEnt as any).position = translatePt((ent as any).position, dx, dy);
                 } else if (ent.type === 'RAY' || ent.type === 'XLINE') {
                   (newEnt as any).origin = translatePt((ent as any).origin, dx, dy);
@@ -3585,9 +3662,9 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
                 }
               } else if (ent.type === 'LWPOLYLINE') {
                 (newEnt as any).vertices = (ent as any).vertices.map((v: Point) => rotatePt(v, centerPoint[0], centerPoint[1], angle));
-              } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+              } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'TABLE') {
                 (newEnt as any).position = rotatePt((ent as any).position, centerPoint[0], centerPoint[1], angle);
-                if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+                if (ent.type === 'TEXT') {
                   (newEnt as any).rotation = ((ent as any).rotation || 0) + angle;
                 }
               } else if (ent.type === 'RAY' || ent.type === 'XLINE') {
@@ -3698,7 +3775,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             updateEntity(id, {
               vertices: (ent as any).vertices.map((v: Point) => translatePt(v, dx, dy)),
             });
-          } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+          } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'TABLE') {
             updateEntity(id, {
               position: translatePt((ent as any).position, dx, dy),
             });
@@ -4687,7 +4764,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
                 (relativeEnt as any).vertices = (ent as any).vertices.map((v: Point) =>
                   translatePt(v, -basePoint[0], -basePoint[1])
                 );
-              } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+              } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'TABLE') {
                 (relativeEnt as any).position = translatePt((ent as any).position, -basePoint[0], -basePoint[1]);
               }
 
@@ -5232,10 +5309,6 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           } else if (ent.type === 'TEXT') {
             (newEnt as any).position = scalePt((ent as any).position, base[0], base[1], factor);
             (newEnt as any).height *= factor;
-          } else if (ent.type === 'MTEXT') {
-            (newEnt as any).position = scalePt((ent as any).position, base[0], base[1], factor);
-            (newEnt as any).height *= factor;
-            (newEnt as any).width *= factor;
           } else if (ent.type === 'TABLE') {
             (newEnt as any).position = scalePt((ent as any).position, base[0], base[1], factor);
             (newEnt as any).rowHeight *= factor;
@@ -5278,7 +5351,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
             (newEnt as any).vertices = (ent as any).vertices.map((v: Point) =>
               rotatePt(v, base[0], base[1], deltaAngle)
             );
-          } else if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+          } else if (ent.type === 'TEXT') {
             (newEnt as any).position = rotatePt((ent as any).position, base[0], base[1], deltaAngle);
             (newEnt as any).rotation = ((ent as any).rotation || 0) + deltaAngle;
           } else if (ent.type === 'TABLE') {
@@ -5361,7 +5434,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           maxX = Math.max(maxX, v[0]);
           maxY = Math.max(maxY, v[1]);
         });
-      } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'MTEXT' || ent.type === 'TABLE') {
+      } else if (ent.type === 'POINT' || ent.type === 'TEXT' || ent.type === 'TABLE') {
         const p = (ent as any).position;
         if (p) {
           minX = Math.min(minX, p[0]);
@@ -5451,6 +5524,9 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     selectionBox,
     handlePointerDown,
     handlePointerUp,
+    isDragging,
+    dragStartPoint,
+    dragBaseEntities,
     undo,
     redo,
     canUndo,

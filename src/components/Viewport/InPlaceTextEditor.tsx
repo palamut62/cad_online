@@ -91,7 +91,22 @@ const InPlaceTextEditor: React.FC = () => {
             const timer = setTimeout(() => {
                 textareaRef.current?.focus();
             }, 100);
-            return () => clearTimeout(timer);
+
+            // Keep focus on textarea - prevent canvas from stealing focus
+            const focusInterval = setInterval(() => {
+                if (textareaRef.current && document.activeElement !== textareaRef.current) {
+                    // Only refocus if no other input is focused (e.g., toolbar inputs)
+                    const activeTag = document.activeElement?.tagName?.toLowerCase();
+                    if (activeTag !== 'input' && activeTag !== 'select') {
+                        textareaRef.current.focus();
+                    }
+                }
+            }, 200);
+
+            return () => {
+                clearTimeout(timer);
+                clearInterval(focusInterval);
+            };
         }
     }, [inPlaceTextEditorState.isOpen]);
 
@@ -181,7 +196,11 @@ const InPlaceTextEditor: React.FC = () => {
             }}
             zIndexRange={[1000, 1001]}
         >
-            <div className="in-place-text-editor" onClick={(e) => e.stopPropagation()}>
+            <div
+                className="in-place-text-editor"
+                onClick={(e) => e.stopPropagation()}
+                onWheel={(e) => e.stopPropagation()}
+            >
                 {/* Toolbar */}
                 <div className="editor-toolbar" onMouseDown={handleToolbarClick}>
                     {/* Font Family */}
@@ -332,6 +351,14 @@ const InPlaceTextEditor: React.FC = () => {
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
+                    onBlur={(e) => {
+                        // Prevent losing focus to canvas - immediately refocus
+                        e.preventDefault();
+                        const relatedTag = (e.relatedTarget as HTMLElement)?.tagName?.toLowerCase();
+                        if (relatedTag !== 'input' && relatedTag !== 'select' && relatedTag !== 'button') {
+                            setTimeout(() => textareaRef.current?.focus(), 10);
+                        }
+                    }}
                     placeholder="Metin girin..."
                     style={{
                         fontSize: `${fontSize}px`,

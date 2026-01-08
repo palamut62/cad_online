@@ -1,5 +1,5 @@
 import React from 'react';
-import { Line } from '@react-three/drei';
+import { Line, Text } from '@react-three/drei';
 import { useDrawing } from '../../context/DrawingContext';
 import type { Point } from '../../types/entities';
 import { DEFAULT_DIMENSION_SETTINGS } from '../../types/dimensionSettings';
@@ -754,6 +754,56 @@ const PreviewRenderer = () => {
         }
 
         return <group>{previewElements}</group>;
+    }
+
+    // TEXT preview - step 1: editor open (no preview needed)
+    // step 2: show pending text following cursor for placement
+    if (activeCommand === 'TEXT' && step === 2 && commandState.pendingText) {
+        const pendingStyle = commandState.pendingStyle || {};
+        const textHeight = pendingStyle.height || 10;
+        const textColor = pendingStyle.color || '#FFFFFF';
+
+        return (
+            <group position={[cursorPosition[0], cursorPosition[1], 0.1]}>
+                {/* Crosshair for precise placement */}
+                <Line
+                    points={[[-8, 0, 0], [8, 0, 0]]}
+                    color={previewColor}
+                    lineWidth={1}
+                    opacity={0.5}
+                    transparent
+                    dashed
+                    dashSize={2}
+                    gapSize={1}
+                />
+                <Line
+                    points={[[0, -8, 0], [0, 8, 0]]}
+                    color={previewColor}
+                    lineWidth={1}
+                    opacity={0.5}
+                    transparent
+                    dashed
+                    dashSize={2}
+                    gapSize={1}
+                />
+                {/* Actual text content preview */}
+                <Text
+                    position={[2, 0, 0.02]}
+                    fontSize={textHeight}
+                    color={textColor}
+                    anchorX="left"
+                    anchorY="middle"
+                    fillOpacity={0.7}
+                >
+                    {commandState.pendingText}
+                </Text>
+                {/* Text placement indicator */}
+                <mesh position={[-2, 0, 0]}>
+                    <circleGeometry args={[2, 16]} />
+                    <meshBasicMaterial color={previewColor} transparent opacity={0.5} />
+                </mesh>
+            </group>
+        );
     }
 
     return null;

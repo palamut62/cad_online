@@ -4,6 +4,7 @@ import {
     FaFolderOpen, FaSave, FaFile, FaFileExport, FaExclamationTriangle
 } from 'react-icons/fa';
 import { useDrawing } from '../../context/DrawingContext';
+import { useNotification } from '../../context/NotificationContext';
 import { parseDxf } from '../../utils/dxfLoader';
 import { exportDXF } from '../../utils/dxfExporter';
 import { PRESET_PATTERNS, PATTERN_CATEGORIES, getPatternPreview } from '../../utils/hatchPatterns';
@@ -175,8 +176,12 @@ const Ribbon = () => {
         // Layers
         layers, activeLayerId, setActiveLayerId, setLayerDialogState,
         // Global Properties
-        activeLineType, setActiveLineType, activeLineWeight, setActiveLineWeight
+        activeLineType, setActiveLineType, activeLineWeight, setActiveLineWeight,
+        // Dimension Settings
+        setDimensionSettingsDialogState
     } = useDrawing();
+
+    const { showConfirm, showError } = useNotification();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Hatch Context - memoized to prevent unnecessary re-renders
@@ -253,17 +258,18 @@ const Ribbon = () => {
         addSheet();
     };
 
-    const handleCloseFile = () => {
+    const handleCloseFile = async () => {
         if (entities.length === 0) {
             return; // Zaten boş, kapatılacak bir şey yok
         }
         if (isModified) {
-            const choice = window.confirm('Kaydedilmemiş değişiklikler var. Dosyayı kapatmak istediğinize emin misiniz?\n\nKaydetmek için "İptal"e basın ve önce kaydedin.');
+            const choice = await showConfirm('Uyarı', 'Kaydedilmemiş değişiklikler var. Dosyayı kapatmak istediğinize emin misiniz?');
             if (!choice) {
                 return;
             }
         } else {
-            if (!window.confirm('Dosyayı kapatmak istediğinize emin misiniz?')) {
+            const choice = await showConfirm('Dosya Kapat', 'Dosyayı kapatmak istediğinize emin misiniz?');
+            if (!choice) {
                 return;
             }
         }
@@ -308,7 +314,7 @@ const Ribbon = () => {
             const content = event.target?.result as string;
             const result = parseDxf(content);
             if (result.errors.length > 0) {
-                alert('DXF okuma hatası: ' + result.errors.join('\n'));
+                showError('DXF Hatası', 'DXF okuma hatası: ' + result.errors.join('\n'));
                 return;
             }
             // Her zaman yeni sekme olarak aç (mevcut sekmeyi değiştirme)
@@ -917,12 +923,6 @@ const Ribbon = () => {
                                     </svg>
                                     <span>Text</span>
                                 </button>
-                                <button className={`tool-btn ${activeCommand === 'MTEXT' ? 'active' : ''}`} onClick={() => startCommand('MTEXT')}>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <path d="M4 20 L8 4 L12 20 L16 4 L20 20" />
-                                    </svg>
-                                    <span>MText</span>
-                                </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMLINEAR' ? 'active' : ''}`} onClick={() => startCommand('DIMLINEAR')}>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                         <line x1="4" y1="20" x2="4" y2="8" />
@@ -1004,6 +1004,18 @@ const Ribbon = () => {
                                         <rect x="4" y="4" width="16" height="16" strokeDasharray="4,2" />
                                     </svg>
                                     <span>Boundary</span>
+                                </button>
+                                <button
+                                    className="tool-btn"
+                                    onClick={() => setDimensionSettingsDialogState({ isOpen: true })}
+                                    title="Ölçü Ayarları"
+                                >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="3" />
+                                        <path d="M12 2 L12 5 M12 19 L12 22 M2 12 L5 12 M19 12 L22 12" />
+                                        <path d="M4.9 4.9 L6.3 6.3 M17.7 17.7 L19.1 19.1 M4.9 19.1 L6.3 17.7 M17.7 6.3 L19.1 4.9" />
+                                    </svg>
+                                    <span>DimStyle</span>
                                 </button>
                             </div>
                             <div className="panel-label">Annotation <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
@@ -1221,12 +1233,6 @@ const Ribbon = () => {
                     <div className="ribbon-group">
                         <div className="ribbon-panel">
                             <div className="tool-grid">
-                                <button className={`tool-btn ${activeCommand === 'MTEXT' ? 'active' : ''}`} onClick={() => startCommand('MTEXT')}>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <path d="M4 20 L8 4 L12 20 L16 4 L20 20" />
-                                    </svg>
-                                    <span>Multiline Text</span>
-                                </button>
                                 <button className={`tool-btn ${activeCommand === 'TEXT' ? 'active' : ''}`} onClick={() => startCommand('TEXT')}>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                         <path d="M4 20 L12 4 L20 20" />

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import { useDrawing } from '../../context/DrawingContext';
+import { useNotification } from '../../context/NotificationContext';
+import { exportDXF } from '../../utils/dxfExporter';
 
 interface ApplicationMenuDialogProps {
     isOpen: boolean;
@@ -13,8 +15,12 @@ const ApplicationMenuDialog: React.FC<ApplicationMenuDialogProps> = ({ isOpen, o
         activeSheetId,
         sheets,
         loadProject,
-        setPrintDialogState
+        setPrintDialogState,
+        entities,
+        fileName
     } = useDrawing();
+
+    const { showError, showInfo } = useNotification();
 
     if (!isOpen) return null;
 
@@ -75,11 +81,11 @@ const ApplicationMenuDialog: React.FC<ApplicationMenuDialogProps> = ({ isOpen, o
                     } else if (data.entities && Array.isArray(data.entities)) {
                         loadProject(data); // loadProject handles legacy format too
                     } else {
-                        alert("Invalid file format.");
+                        showError('Dosya Hatası', 'Geçersiz dosya formatı.');
                     }
                 } catch (err) {
                     console.error('File read error:', err);
-                    alert("Failed to read file.");
+                    showError('Dosya Hatası', 'Dosya okunamadı.');
                 }
             };
             reader.readAsText(file);
@@ -90,6 +96,37 @@ const ApplicationMenuDialog: React.FC<ApplicationMenuDialogProps> = ({ isOpen, o
 
     const handlePrint = () => {
         setPrintDialogState({ isOpen: true });
+        onClose();
+    };
+
+    const handleExport = () => {
+        // Export to DXF format
+        const exportFileName = fileName || `drawing_${Date.now()}`;
+        exportDXF(entities, exportFileName);
+        onClose();
+    };
+
+    const handleHelp = () => {
+        // Open help dialog or show keyboard shortcuts
+        showInfo('CAD Online - Yardım',
+            `Klavye Kısayolları:
+──────────────────
+Escape: Komutu iptal et
+Delete: Seçili nesneleri sil
+Ctrl+Z: Geri al
+Ctrl+Y: Yinele
+Ctrl+A: Tümünü seç
+Ctrl+C: Kopyala
+Ctrl+V: Yapıştır
+F7: Grid aç/kapa
+F8: Ortho aç/kapa
+F9: Snap aç/kapa
+
+Fare:
+──────────────────
+Sol tık: Nokta seç / Nesne seç
+Orta tık sürükle: Pan
+Scroll: Zoom`);
         onClose();
     };
 
@@ -245,7 +282,8 @@ const ApplicationMenuDialog: React.FC<ApplicationMenuDialogProps> = ({ isOpen, o
                     <MenuItem
                         icon="publish"
                         title="Export"
-                        desc="Export to DXF, PDF or other formats"
+                        desc="Export to DXF format"
+                        onClick={handleExport}
                     />
 
                     <Divider />
@@ -253,7 +291,8 @@ const ApplicationMenuDialog: React.FC<ApplicationMenuDialogProps> = ({ isOpen, o
                     <MenuItem
                         icon="help_outline"
                         title="Help"
-                        desc="User guide and support"
+                        desc="Keyboard shortcuts and help"
+                        onClick={handleHelp}
                     />
 
                     <Divider />

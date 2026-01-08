@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useDrawing } from '../../context/DrawingContext';
+import { useNotification } from '../../context/NotificationContext';
 import { FaFile, FaFolderOpen, FaSave, FaPrint } from 'react-icons/fa';
 import Ribbon from '../Ribbon/Ribbon';
 import Viewport from '../Viewport/Viewport';
@@ -65,6 +66,7 @@ const MainLayout = () => {
         triggerView
     } = useDrawing();
 
+    const { showError } = useNotification();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
 
@@ -141,7 +143,7 @@ const MainLayout = () => {
                                 const content = event.target?.result as string;
                                 const result = parseDxf(content);
                                 if (result.errors.length > 0) {
-                                    alert('DXF read error: ' + result.errors.join('\n'));
+                                    showError('DXF Hatası', 'DXF okuma hatası: ' + result.errors.join('\n'));
                                     return;
                                 }
                                 addSheet(file.name);
