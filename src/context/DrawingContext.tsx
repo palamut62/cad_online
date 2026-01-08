@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import type { Entity, Point } from '../types/entities';
 import type { CommandType } from '../types/commands';
-import { closestPointOnEntity, rotatePoint as rotatePt, scalePoint as scalePt, translatePoint as translatePt, mirrorPoint as mirrorPt, getClosestSnapPoint, SnapPoint, GripPoint, distance2D, isEntityInBox, doesEntityIntersectBox } from '../utils/geometryUtils';
+import { closestPointOnEntity, rotatePoint as rotatePt, scalePoint as scalePt, translatePoint as translatePt, mirrorPoint as mirrorPt, getClosestSnapPoint, SnapPoint, GripPoint, distance2D, isEntityInBox, doesEntityIntersectBox, createArcFrom3Points } from '../utils/geometryUtils';
 import { trimLineEntity, trimArcEntity, trimCircleEntity, extendLineEntity, extendArcEntity } from '../utils/intersectionUtils';
 import { findAlignmentPoints, AlignmentGuide, scaleEntity } from '../utils/geometryUtils';
 import { findBoundaryFromPoint } from '../utils/boundaryUtils';
@@ -108,7 +108,7 @@ interface DrawingContextValue {
   // Command state
   activeCommand: CommandType | null;
   startCommand: (cmd: CommandType) => void;
-  cancelCommand: () => void;
+  cancelCommand: (saveIncomplete?: boolean) => void;
 
   // Command execution state
   step: number;
@@ -171,6 +171,12 @@ interface DrawingContextValue {
   triggerZoomIn: () => void;
   zoomOutTrigger: number;
   triggerZoomOut: () => void;
+
+  // Navigation controls
+  panTrigger: { x: number; y: number } | null;
+  triggerPan: (x: number, y: number) => void;
+  viewTrigger: 'TOP' | null;
+  triggerView: (view: 'TOP') => void;
 
   // Zoom Window
   zoomWindowMode: boolean;
@@ -655,6 +661,19 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     setZoomOutTrigger(prev => prev + 1);
   }, []);
 
+  // Navigation triggers
+  const [panTrigger, setPanTrigger] = useState<{ x: number; y: number } | null>(null);
+  const triggerPan = useCallback((x: number, y: number) => {
+    setPanTrigger({ x, y });
+  }, []);
+
+  const [viewTrigger, setViewTrigger] = useState<'TOP' | null>(null);
+  const triggerView = useCallback((view: 'TOP') => {
+    setViewTrigger(view);
+    // Reset trigger after a short delay to allow re-triggering same view if needed (though usually idempotent)
+    setTimeout(() => setViewTrigger(null), 100);
+  }, []);
+
   // Zoom Window state
   const [zoomWindowMode, setZoomWindowMode] = useState(false);
   const [zoomWindowBox, setZoomWindowBox] = useState<{ start: Point; end: Point } | null>(null);
@@ -914,6 +933,11 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       setSelectedIds(new Set());
     }
 
+    // Quick Trim/Extend Mode: Skip manual boundary selection
+    if (cmd === 'TRIM' || cmd === 'EXTEND') {
+      setStep(2);
+    }
+
     // DIMCONTINUE: Ardışık ölçü - önceden ölçü gerekmez
     // Step 1: İlk nokta, Step 2: İkinci nokta, Step 3: Ölçü pozisyonu, Step 4+: Devam noktaları
     if (cmd === 'DIMCONTINUE') {
@@ -976,9 +1000,10 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   }, [entities]);
 
   // Cancel command
-  const cancelCommand = useCallback(() => {
+  const cancelCommand = useCallback((saveIncomplete = true) => {
     // POLYLINE ve SPLINE için: ESC'de 2+ nokta varsa entity olarak kaydet
-    if ((activeCommand === 'POLYLINE' || activeCommand === 'LINE') && tempPoints.length >= 2) {
+    // saveIncomplete check added to prevent double-save when called from finishPolyline
+    if (saveIncomplete && (activeCommand === 'POLYLINE' || activeCommand === 'LINE') && tempPoints.length >= 2) {
       // Çizilen noktaları entity olarak kaydet
       addEntity({
         type: 'LWPOLYLINE',
@@ -988,7 +1013,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         layer: activeLayerId,
       });
       console.log('POLYLINE saved before cancel');
-    } else if (activeCommand === 'SPLINE' && tempPoints.length >= 2) {
+    } else if (saveIncomplete && activeCommand === 'SPLINE' && tempPoints.length >= 2) {
       addEntity({
         type: 'SPLINE',
         controlPoints: tempPoints,
@@ -1058,7 +1083,8 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         color: 'BYLAYER',
         layer: activeLayerId,
       });
-      cancelCommand();
+      // Pass false to prevent double-save (cancelCommand usually saves incomplete polylines on ESC)
+      cancelCommand(false);
     }
   }, [activeCommand, tempPoints, addEntity, cancelCommand, activeLayerId]);
 
@@ -1644,25 +1670,27 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       }
     } else if (activeCommand === 'ELLIPSE') {
       if (step === 1) {
+        // Step 1: Pick center point
         setTempPoints([point]);
         setStep(2);
       } else if (step === 2) {
-        const rx = Math.hypot(point[0] - tempPoints[0][0], point[1] - tempPoints[0][1]);
-        setCommandState({ center: tempPoints[0], rx });
-        setTempPoints([tempPoints[0], point]);
-        setStep(3);
-      } else if (step === 3) {
-        const { center, rx } = commandState;
-        const ry = Math.hypot(point[0] - center[0], point[1] - center[1]);
-        addEntity({
-          type: 'ELLIPSE',
-          center,
-          rx,
-          ry,
-          rotation: 0,
-          color: '#fff',
-          layer: '0',
-        });
+        // Step 2: Pick corner point - create ellipse immediately
+        const center = tempPoints[0];
+        const rx = Math.abs(point[0] - center[0]);
+        const ry = Math.abs(point[1] - center[1]);
+
+        // Minimum size check
+        if (rx > 0.1 && ry > 0.1) {
+          addEntity({
+            type: 'ELLIPSE',
+            center,
+            rx,
+            ry,
+            rotation: 0,
+            color: 'BYLAYER',
+            layer: activeLayerId,
+          });
+        }
         // Komut aktif kalsın - ESC ile çıkılır
         setStep(1);
         setTempPoints([]);
@@ -2522,11 +2550,22 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         }
       } else if (step === 2) {
         // Trimming objects
-        const cuttingEdgeIds = commandState.cuttingEdges || [];
-        const cuttingEdges = entities.filter(e => cuttingEdgeIds.includes(e.id));
+        // Trimming objects
+        // Logic improved for "Quick Trim": If no cutting edges pre-selected, use ALL visible entities
+        let cuttingEdgeIds = commandState.cuttingEdges || [];
+        let cuttingEdges = [];
+
+        if (cuttingEdgeIds.length === 0) {
+          // Quick mode: All entities except self are cutting edges
+          // We'll determine self later
+          cuttingEdges = entities.filter(e => e.visible !== false);
+        } else {
+          cuttingEdges = entities.filter(e => cuttingEdgeIds.includes(e.id));
+        }
 
         if (cuttingEdges.length === 0) {
-          console.log('No cutting edges selected');
+          // Should rarely happen in quick mode unless drawing is empty
+          console.log('No cutting edges defined');
           return;
         }
 
@@ -2536,7 +2575,8 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         const SELECT_THRESHOLD = 5.0;
         entities.forEach(ent => {
           if (ent.visible === false) return;
-          if (cuttingEdgeIds.includes(ent.id)) return; // Skip cutting edges
+          if (cuttingEdgeIds.length > 0 && cuttingEdgeIds.includes(ent.id)) return; // Skip explicit cutting edges as targets (optional)
+          // In quick mode, everything is a potential target AND a potential cutter (except self)
           const d = closestPointOnEntity(point[0], point[1], ent);
           if (d < SELECT_THRESHOLD && d < minD) {
             minD = d;
@@ -2550,11 +2590,15 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           const target = targetEntity as Entity;
 
           if (target.type === 'LINE') {
-            newEntities = trimLineEntity(target, point, cuttingEdges);
+            // Filter out self from cutting edges for Quick Mode
+            const effectiveCutters = cuttingEdges.filter(e => e.id !== target.id);
+            newEntities = trimLineEntity(target, point, effectiveCutters);
           } else if (target.type === 'ARC') {
-            newEntities = trimArcEntity(target, point, cuttingEdges);
+            const effectiveCutters = cuttingEdges.filter(e => e.id !== target.id);
+            newEntities = trimArcEntity(target, point, effectiveCutters);
           } else if (target.type === 'CIRCLE') {
-            newEntities = trimCircleEntity(target, point, cuttingEdges);
+            const effectiveCutters = cuttingEdges.filter(e => e.id !== target.id);
+            newEntities = trimCircleEntity(target, point, effectiveCutters);
           }
 
           // Delete original entity
@@ -2593,10 +2637,17 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       } else if (step === 2) {
         // Extending objects
         const boundaryIds = commandState.boundaries || [];
-        const boundaries = entities.filter(e => boundaryIds.includes(e.id));
+        let boundaries = [];
+
+        if (boundaryIds.length === 0) {
+          // Quick Extend: All entities except self are boundaries
+          boundaries = entities.filter(e => e.visible !== false);
+        } else {
+          boundaries = entities.filter(e => boundaryIds.includes(e.id));
+        }
 
         if (boundaries.length === 0) {
-          console.log('No boundary edges selected');
+          console.log('No boundary edges defined');
           return;
         }
 
@@ -2606,7 +2657,9 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
         const SELECT_THRESHOLD = 5.0;
         entities.forEach(ent => {
           if (ent.visible === false) return;
-          if (boundaryIds.includes(ent.id)) return; // Skip boundaries
+          if (boundaryIds.length > 0 && boundaryIds.includes(ent.id)) return; // Skip explicit boundaries
+          // Quick mode: Self cannot be boundary checking happens later or via filtering
+
           const d = closestPointOnEntity(point[0], point[1], ent);
           if (d < SELECT_THRESHOLD && d < minD) {
             minD = d;
@@ -2620,9 +2673,11 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           const target = targetEntity as Entity;
 
           if (target.type === 'LINE') {
-            extendedEntity = extendLineEntity(target, point, boundaries);
+            const effectiveBoundaries = boundaries.filter(e => e.id !== target.id);
+            extendedEntity = extendLineEntity(target, point, effectiveBoundaries);
           } else if (target.type === 'ARC') {
-            extendedEntity = extendArcEntity(target, point, boundaries);
+            const effectiveBoundaries = boundaries.filter(e => e.id !== target.id);
+            extendedEntity = extendArcEntity(target, point, effectiveBoundaries);
           }
 
           if (extendedEntity && extendedEntity !== target) {
@@ -5406,6 +5461,11 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     triggerZoomIn,
     zoomOutTrigger,
     triggerZoomOut,
+    // Navigation
+    panTrigger,
+    triggerPan,
+    viewTrigger,
+    triggerView,
     zoomWindowMode,
     startZoomWindow,
     cancelZoomWindow,
@@ -5463,6 +5523,7 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
     undo, redo, canUndo, canRedo,
     zoomToFitTrigger, triggerZoomToFit,
     zoomInTrigger, triggerZoomIn, zoomOutTrigger, triggerZoomOut,
+    panTrigger, triggerPan, viewTrigger, triggerView,
     zoomWindowMode, startZoomWindow, cancelZoomWindow, zoomWindowBox, applyZoomWindow, zoomWindowTrigger,
     textDialogState, setTextDialogState,
     tableDialogState, setTableDialogState,
@@ -5481,29 +5542,4 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   );
 };
 
-// Helper: Create arc from 3 points
-function createArcFrom3Points(p1: Point, p2: Point, p3: Point): {
-  center: Point;
-  radius: number;
-  startAngle: number;
-  endAngle: number;
-} | null {
-  const x1 = p1[0], y1 = p1[1];
-  const x2 = p2[0], y2 = p2[1];
-  const x3 = p3[0], y3 = p3[1];
 
-  const D = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2));
-  if (Math.abs(D) < 0.0001) return null;
-
-  const Ux = ((x1 * x1 + y1 * y1) * (y2 - y3) + (x2 * x2 + y2 * y2) * (y3 - y1) + (x3 * x3 + y3 * y3) * (y1 - y2)) / D;
-  const Uy = ((x1 * x1 + y1 * y1) * (x3 - x2) + (x2 * x2 + y2 * y2) * (x1 - x3) + (x3 * x3 + y3 * y3) * (x2 - x1)) / D;
-
-  const radius = Math.sqrt((x1 - Ux) * (x1 - Ux) + (y1 - Uy) * (y1 - Uy));
-
-  return {
-    center: [Ux, Uy, 0],
-    radius,
-    startAngle: Math.atan2(y1 - Uy, x1 - Ux),
-    endAngle: Math.atan2(y3 - Uy, x3 - Ux),
-  };
-}

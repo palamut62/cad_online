@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { OrbitControls } from '@react-three/drei';
 import { useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -396,6 +396,52 @@ const ZoomController = () => {
     return null;
 };
 
+// Navigation Controller - Pan and View resets
+const NavigationController = () => {
+    const { camera, controls } = useThree();
+    const { panTrigger, viewTrigger, triggerZoomToFit } = useDrawing();
+
+    // Pan Handler
+    useEffect(() => {
+        if (!panTrigger) return;
+
+        const orthoCamera = camera as THREE.OrthographicCamera;
+        if (!orthoCamera.isOrthographicCamera) return;
+
+        const zoom = orthoCamera.zoom;
+        // Pan amount should depend on zoom level to feel natural
+        // Higher zoom = smaller movement
+        // Let's say we want to move 25% of the viewport dimension
+        const viewportHeight = (orthoCamera.top - orthoCamera.bottom) / zoom;
+        const moveAmount = viewportHeight * 0.15; // 15% movement
+
+        const deltaX = panTrigger.x * moveAmount;
+        const deltaY = panTrigger.y * moveAmount;
+
+        camera.position.x += deltaX;
+        camera.position.y += deltaY;
+
+        if (controls) {
+            (controls as any).target.x += deltaX;
+            (controls as any).target.y += deltaY;
+            (controls as any).update();
+        }
+
+    }, [panTrigger, camera, controls]);
+
+    // View Reset Handler
+    useEffect(() => {
+        if (!viewTrigger) return;
+
+        if (viewTrigger === 'TOP') {
+            // Trigger Zoom Extents directly to reset view nicely
+            triggerZoomToFit();
+        }
+    }, [viewTrigger, triggerZoomToFit]);
+
+    return null;
+};
+
 // Zoom Window Box Renderer - seçim kutusunu gösterir
 const ZoomWindowBoxRenderer = () => {
     const { zoomWindowBox, zoomWindowMode } = useDrawing();
@@ -477,15 +523,70 @@ const PrintWindowBoxRenderer = () => {
     );
 };
 
-// Dinamik ve Uyarlanabilir Grid - AutoCAD Style
+// Dinamik ve Uyarlanabilir Grid - AutoCAD Style (Custom Line Implementation)
 const DynamicGrid = () => {
     const { camera } = useThree();
     const { gridEnabled } = useDrawing();
 
-    // Refs for grid layers
-    const minorGridRef = useRef<THREE.GridHelper>(null);
-    const majorGridRef = useRef<THREE.GridHelper>(null);
-    const giantGridRef = useRef<THREE.GridHelper>(null);
+    // Refs for grid meshes
+    const minorLinesRef = useRef<THREE.LineSegments>(null);
+    const majorLinesRef = useRef<THREE.LineSegments>(null);
+    const axisLinesRef = useRef<THREE.LineSegments>(null);
+
+    // Memoized geometry creation function
+    const createGridGeometry = useMemo(() => {
+        return (bounds: { minX: number; maxX: number; minY: number; maxY: number }, spacing: number) => {
+            const vertices: number[] = [];
+
+            // Vertical lines (along Y)
+            const startX = Math.floor(bounds.minX / spacing) * spacing;
+            const endX = Math.ceil(bounds.maxX / spacing) * spacing;
+            for (let x = startX; x <= endX; x += spacing) {
+                vertices.push(x, bounds.minY, 0);
+                vertices.push(x, bounds.maxY, 0);
+            }
+
+            // Horizontal lines (along X)
+            const startY = Math.floor(bounds.minY / spacing) * spacing;
+            const endY = Math.ceil(bounds.maxY / spacing) * spacing;
+            for (let y = startY; y <= endY; y += spacing) {
+                vertices.push(bounds.minX, y, 0);
+                vertices.push(bounds.maxX, y, 0);
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            return geometry;
+        };
+    }, []);
+
+    // Create axis lines geometry (X = red, Y = green)
+    const createAxisGeometry = useMemo(() => {
+        return (bounds: { minX: number; maxX: number; minY: number; maxY: number }) => {
+            // X-axis (along the X direction at Y=0)
+            const xAxisVertices = [bounds.minX, 0, 0.01, bounds.maxX, 0, 0.01];
+            // Y-axis (along the Y direction at X=0)
+            const yAxisVertices = [0, bounds.minY, 0.01, 0, bounds.maxY, 0.01];
+
+            const xGeom = new THREE.BufferGeometry();
+            xGeom.setAttribute('position', new THREE.Float32BufferAttribute(xAxisVertices, 3));
+
+            const yGeom = new THREE.BufferGeometry();
+            yGeom.setAttribute('position', new THREE.Float32BufferAttribute(yAxisVertices, 3));
+
+            // Merge into single geometry with color attributes
+            const vertices = [...xAxisVertices, ...yAxisVertices];
+            const colors = [
+                0.5, 0.25, 0.25, 0.5, 0.25, 0.25, // X-axis: faded red
+                0.25, 0.5, 0.25, 0.25, 0.5, 0.25  // Y-axis: faded green
+            ];
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            return geometry;
+        };
+    }, []);
 
     useFrame(() => {
         if (!gridEnabled) return;
@@ -493,75 +594,84 @@ const DynamicGrid = () => {
         if (!orthoCamera.isOrthographicCamera) return;
 
         const zoom = orthoCamera.zoom;
+        const camX = camera.position.x;
+        const camY = camera.position.y;
 
-        // Viewport boyutlarını dünya koordinatlarında hesapla
-        const vHeight = (orthoCamera.top - orthoCamera.bottom) / zoom;
-        const vWidth = (orthoCamera.right - orthoCamera.left) / zoom;
-        const maxDim = Math.max(vWidth, vHeight);
+        // Calculate visible bounds in world coordinates
+        const halfWidth = (orthoCamera.right - orthoCamera.left) / (2 * zoom);
+        const halfHeight = (orthoCamera.top - orthoCamera.bottom) / (2 * zoom);
 
-        // Grid boyutu görünür alanın 3 katı olsun ki pan yapınca hemen bitmesin
-        const dynamicSize = maxDim * 3;
+        // Extend bounds to cover pan movement
+        const padding = Math.max(halfWidth, halfHeight) * 0.5;
+        const bounds = {
+            minX: camX - halfWidth - padding,
+            maxX: camX + halfWidth + padding,
+            minY: camY - halfHeight - padding,
+            maxY: camY + halfHeight + padding
+        };
 
-        // Ekranda bir çizginin yaklaşık kaç piksel yer kapladığını hesapla (adaptive density)
-        // 10 birimlik gridler arası mesafe: 10 * zoom piksel
-        const minorVisible = 10 * zoom > 8; // 8 pikselden büyükse göster
-        const majorVisible = 100 * zoom > 8;
-        const giantVisible = 1000 * zoom > 8;
+        // Calculate adaptive spacing based on screen pixel density
+        // We want grid lines to be at least minPixelSpacing pixels apart
+        const minPixelSpacing = 10;
+        const worldUnitsPerPixel = 1 / zoom;
+        const minWorldSpacing = minPixelSpacing * worldUnitsPerPixel;
 
-        // Grid'i kamera pozisyonun snap'leyerek taşı => Sonsuzluk ilüzyonu
-        // En büyük görünür step'e göre snaple ki çizgiler titremesin
-        const snapStep = giantVisible ? 1000 : (majorVisible ? 100 : 10);
-        const snapX = Math.round(camera.position.x / snapStep) * snapStep;
-        const snapY = Math.round(camera.position.y / snapStep) * snapStep;
-
-        // GridHelper base size = 4000. dynamicSize'a göre scale et.
-        const baseSize = 4000;
-        const scale = dynamicSize / baseSize;
-
-        if (minorGridRef.current) {
-            minorGridRef.current.visible = minorVisible;
-            minorGridRef.current.position.set(snapX, snapY, -10.1);
-            minorGridRef.current.scale.set(scale, scale, 1);
+        // Find the smallest power-of-10 spacing that gives >= minPixelSpacing
+        let minorSpacing = 1;
+        while (minorSpacing < minWorldSpacing) {
+            minorSpacing *= 10;
         }
-        if (majorGridRef.current) {
-            majorGridRef.current.visible = majorVisible;
-            majorGridRef.current.position.set(snapX, snapY, -10);
-            majorGridRef.current.scale.set(scale, scale, 1);
+        // If we can fit 5-unit subdivisions, use them
+        if (minorSpacing / 5 >= minWorldSpacing) {
+            minorSpacing /= 5;
+        } else if (minorSpacing / 2 >= minWorldSpacing) {
+            minorSpacing /= 2;
         }
-        if (giantGridRef.current) {
-            giantGridRef.current.visible = giantVisible;
-            giantGridRef.current.position.set(snapX, snapY, -9.9);
-            giantGridRef.current.scale.set(scale, scale, 1);
+
+        const majorSpacing = minorSpacing * 10;
+
+        // Update minor grid
+        if (minorLinesRef.current) {
+            const oldGeom = minorLinesRef.current.geometry;
+            minorLinesRef.current.geometry = createGridGeometry(bounds, minorSpacing);
+            oldGeom.dispose();
+        }
+
+        // Update major grid
+        if (majorLinesRef.current) {
+            const oldGeom = majorLinesRef.current.geometry;
+            majorLinesRef.current.geometry = createGridGeometry(bounds, majorSpacing);
+            oldGeom.dispose();
+        }
+
+        // Update axis lines
+        if (axisLinesRef.current) {
+            const oldGeom = axisLinesRef.current.geometry;
+            axisLinesRef.current.geometry = createAxisGeometry(bounds);
+            oldGeom.dispose();
         }
     });
 
     if (!gridEnabled) return null;
 
-    // AutoCAD Renkleri
-    // Minor: #2A2A2A | Major: #3A3A3A | Giant: #4A4A4A
+    // Initial empty geometry
+    const emptyGeometry = new THREE.BufferGeometry();
+    emptyGeometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
+
     return (
         <>
-            {/* Minor Grid (Step 10) */}
-            <gridHelper
-                ref={minorGridRef}
-                args={[4000, 400, 0x2A2A2A, 0x2A2A2A]}
-                rotation={[Math.PI / 2, 0, 0]}
-                renderOrder={-1001}
-            />
-            {/* Major Grid (Step 100) */}
-            <gridHelper
-                ref={majorGridRef}
-                args={[4000, 40, 0x3A3A3A, 0x3A3A3A]}
-                rotation={[Math.PI / 2, 0, 0]}
-                renderOrder={-1000}
-            />
-            {/* Giant Grid (Step 1000) */}
-            <gridHelper
-                ref={giantGridRef}
-                args={[4000, 4, 0x4A4A4A, 0x4A4A4A]}
-                rotation={[Math.PI / 2, 0, 0]}
-                renderOrder={-999}
-            />
+            {/* Minor Grid */}
+            <lineSegments ref={minorLinesRef} geometry={emptyGeometry} renderOrder={-1002}>
+                <lineBasicMaterial color={0x303030} transparent opacity={0.5} depthWrite={false} />
+            </lineSegments>
+            {/* Major Grid */}
+            <lineSegments ref={majorLinesRef} geometry={emptyGeometry} renderOrder={-1001}>
+                <lineBasicMaterial color={0x484848} transparent opacity={0.8} depthWrite={false} />
+            </lineSegments>
+            {/* Origin Axes (X=red, Y=green) */}
+            <lineSegments ref={axisLinesRef} geometry={emptyGeometry} renderOrder={-1000}>
+                <lineBasicMaterial vertexColors transparent opacity={0.9} depthWrite={false} />
+            </lineSegments>
         </>
     );
 };
@@ -571,6 +681,7 @@ const Scene = () => {
     return (
         <>
             <OrbitControls
+                enableDamping={false}
                 enableRotate={false}
                 enableZoom={true}
                 enablePan={true}
@@ -594,6 +705,9 @@ const Scene = () => {
 
             {/* Zoom Controller */}
             <ZoomController />
+
+            {/* Navigation Controller */}
+            <NavigationController />
 
             {/* Dynamic Grid on XY Plane - follows camera, behind entities */}
             <DynamicGrid />

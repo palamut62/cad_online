@@ -1,13 +1,8 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import './Ribbon.css';
 import {
-    FaRegCircle, FaRegSquare, FaBezierCurve, FaArrowsAlt, FaCopy,
-    FaRedo, FaExpand, FaExchangeAlt, FaEraser, FaFillDrip,
-    FaFont, FaTable, FaProjectDiagram, FaCut, FaObjectUngroup,
     FaFolderOpen, FaSave, FaFile, FaFileExport, FaExclamationTriangle
 } from 'react-icons/fa';
-import { MdPolyline } from 'react-icons/md';
-import { TbLine } from 'react-icons/tb';
 import { useDrawing } from '../../context/DrawingContext';
 import { parseDxf } from '../../utils/dxfLoader';
 import { exportDXF } from '../../utils/dxfExporter';
@@ -671,35 +666,106 @@ const Ribbon = () => {
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className={`tool-btn ${activeCommand === 'LINE' ? 'active' : ''}`} onClick={() => startCommand('LINE')}>
-                                    <TbLine /> <span>Line</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="20" x2="20" y2="4" />
+                                        <circle cx="4" cy="20" r="2" fill="currentColor" />
+                                        <circle cx="20" cy="4" r="2" fill="currentColor" />
+                                    </svg>
+                                    <span>Line</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'POLYLINE' ? 'active' : ''}`} onClick={() => startCommand('POLYLINE')}>
-                                    <MdPolyline /> <span>Polyline</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <polyline points="4,20 10,10 16,16 20,4" />
+                                        <circle cx="4" cy="20" r="1.5" fill="currentColor" />
+                                        <circle cx="10" cy="10" r="1.5" fill="currentColor" />
+                                        <circle cx="16" cy="16" r="1.5" fill="currentColor" />
+                                        <circle cx="20" cy="4" r="1.5" fill="currentColor" />
+                                    </svg>
+                                    <span>Polyline</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'CIRCLE' ? 'active' : ''}`} onClick={() => startCommand('CIRCLE')}>
-                                    <FaRegCircle /> <span>Circle</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="9" />
+                                        <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                                    </svg>
+                                    <span>Circle</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'ARC' ? 'active' : ''}`} onClick={() => startCommand('ARC')}>
-                                    <FaBezierCurve /> <span>Arc</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M4 20 Q12 4 20 20" />
+                                        <circle cx="4" cy="20" r="1.5" fill="currentColor" />
+                                        <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                                        <circle cx="20" cy="20" r="1.5" fill="currentColor" />
+                                    </svg>
+                                    <span>Arc</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'RECTANGLE' ? 'active' : ''}`} onClick={() => startCommand('RECTANGLE')}>
-                                    <FaRegSquare /> <span>Rect</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <rect x="4" y="6" width="16" height="12" />
+                                        <circle cx="4" cy="6" r="1.5" fill="currentColor" />
+                                        <circle cx="20" cy="18" r="1.5" fill="currentColor" />
+                                    </svg>
+                                    <span>Rect</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'HATCH' ? 'active' : ''}`} onClick={openHatchDialog}>
-                                    <FaFillDrip /> <span>Hatch</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <rect x="4" y="4" width="16" height="16" />
+                                        <line x1="4" y1="20" x2="20" y2="4" />
+                                        <line x1="4" y1="12" x2="12" y2="4" />
+                                        <line x1="12" y1="20" x2="20" y2="12" />
+                                    </svg>
+                                    <span>Hatch</span>
                                 </button>
                                 {/* New Draw Tools */}
                                 <button className={`tool-btn ${activeCommand === 'ELLIPSE' ? 'active' : ''}`} onClick={() => startCommand('ELLIPSE')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>hdr_weak</span> <span>Ellipse</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <ellipse cx="12" cy="12" rx="10" ry="6" />
+                                    </svg>
+                                    <span>Ellipse</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'POLYGON' ? 'active' : ''}`} onClick={() => startCommand('POLYGON')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>pentagon</span> <span>Polygon</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <polygon points="12,2 22,8 22,18 12,22 2,18 2,8" />
+                                    </svg>
+                                    <span>Polygon</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'SPLINE' ? 'active' : ''}`} onClick={() => startCommand('SPLINE')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>gesture</span> <span>Spline</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M19 5c-2 0-3 3-5 5s-3 8-7 8-5-3-5-6" />
+                                        <circle cx="19" cy="5" r="2" fill="currentColor" stroke="none" />
+                                        <circle cx="2" cy="12" r="2" fill="currentColor" stroke="none" />
+                                    </svg>
+                                    <span>Spline</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'POINT' ? 'active' : ''}`} onClick={() => startCommand('POINT')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>gps_fixed</span> <span>Point</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                                        <line x1="8" y1="12" x2="16" y2="12" />
+                                        <line x1="12" y1="8" x2="12" y2="16" />
+                                    </svg>
+                                    <span>Point</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DONUT' ? 'active' : ''}`} onClick={() => startCommand('DONUT')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="9" />
+                                        <circle cx="12" cy="12" r="4" />
+                                    </svg>
+                                    <span>Donut</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'RAY' ? 'active' : ''}`} onClick={() => startCommand('RAY')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="12" x2="20" y2="12" />
+                                        <polyline points="16,8 20,12 16,16" />
+                                    </svg>
+                                    <span>Ray</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'XLINE' ? 'active' : ''}`} onClick={() => startCommand('XLINE')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="2" y1="12" x2="22" y2="12" />
+                                        <polyline points="6,8 2,12 6,16" />
+                                        <polyline points="18,8 22,12 18,16" />
+                                    </svg>
+                                    <span>XLine</span>
                                 </button>
                             </div>
                             <div className="panel-label">Draw <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
@@ -709,41 +775,133 @@ const Ribbon = () => {
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className={`tool-btn ${activeCommand === 'MOVE' ? 'active' : ''}`} onClick={() => startCommand('MOVE')}>
-                                    <FaArrowsAlt /> <span>Taşı</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M12 2 L16 6 M12 2 L8 6 M12 2 L12 22 M12 22 L16 18 M12 22 L8 18 M2 12 L6 8 M2 12 L6 16 M2 12 L22 12 M22 12 L18 8 M22 12 L18 16" />
+                                    </svg>
+                                    <span>Move</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'COPY' ? 'active' : ''}`} onClick={() => startCommand('COPY')}>
-                                    <FaCopy /> <span>Copy</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="9" cy="9" r="5" />
+                                        <circle cx="15" cy="15" r="5" strokeDasharray="3,3" />
+                                        <path d="M9 9 L15 15" strokeDasharray="2,2" />
+                                    </svg>
+                                    <span>Copy</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'ROTATE' ? 'active' : ''}`} onClick={() => startCommand('ROTATE')}>
-                                    <FaRedo /> <span>Rotate</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.8.9 6.5 2.5" />
+                                        <path d="M21 5v7h-7" />
+                                    </svg>
+                                    <span>Rotate</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'MIRROR' ? 'active' : ''}`} onClick={() => startCommand('MIRROR')}>
-                                    <FaExchangeAlt /> <span>Mirror</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M16 4 L4 20" strokeDasharray="4,4" />
+                                        <path d="M20 14 L12 14 L16 8 Z" />
+                                        <path d="M4 14 L12 14 L8 8 Z" strokeDasharray="2,2" opacity="0.5" />
+                                    </svg>
+                                    <span>Mirror</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'SCALE' ? 'active' : ''}`} onClick={() => startCommand('SCALE')}>
-                                    <FaExpand /> <span>Scale</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <rect x="4" y="14" width="6" height="6" />
+                                        <rect x="4" y="4" width="16" height="16" strokeDasharray="4,4" />
+                                        <line x1="10" y1="14" x2="20" y2="4" strokeDasharray="2,2" />
+                                    </svg>
+                                    <span>Scale</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'TRIM' ? 'active' : ''}`} onClick={() => startCommand('TRIM')}>
-                                    <FaCut /> <span>Trim</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="20" x2="20" y2="4" />
+                                        <line x1="12" y1="20" x2="20" y2="12" stroke="red" strokeDasharray="2,2" />
+                                        <path d="M16 8 L18 10 M16 10 L18 8" stroke="red" />
+                                    </svg>
+                                    <span>Trim</span>
                                 </button>
                                 {/* New Modify Tools */}
                                 <button className={`tool-btn ${activeCommand === 'OFFSET' ? 'active' : ''}`} onClick={() => startCommand('OFFSET')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>content_copy</span> <span>Offset</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M4 18 C8 18 12 14 12 10" />
+                                        <path d="M8 22 C12 22 16 18 16 14" strokeDasharray="4,4" />
+                                    </svg>
+                                    <span>Offset</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'FILLET' ? 'active' : ''}`} onClick={() => startCommand('FILLET')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>rounded_corner</span> <span>Fillet</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="4" x2="4" y2="12" />
+                                        <line x1="12" y1="20" x2="20" y2="20" />
+                                        <path d="M4 12 Q4 20 12 20" stroke="red" />
+                                    </svg>
+                                    <span>Fillet</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'EXTEND' ? 'active' : ''}`} onClick={() => startCommand('EXTEND')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>last_page</span> <span>Extend</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="20" y1="4" x2="20" y2="20" strokeWidth="3" />
+                                        <line x1="4" y1="12" x2="12" y2="12" />
+                                        <line x1="12" y1="12" x2="20" y2="12" strokeDasharray="2,2" />
+                                    </svg>
+                                    <span>Extend</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'ARRAY' ? 'active' : ''}`} onClick={() => startCommand('ARRAY')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>grid_view</span> <span>Array</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <rect x="4" y="4" width="6" height="6" />
+                                        <rect x="14" y="4" width="6" height="6" />
+                                        <rect x="4" y="14" width="6" height="6" />
+                                        <rect x="14" y="14" width="6" height="6" />
+                                    </svg>
+                                    <span>Array</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'ERASE' ? 'active' : ''}`} onClick={() => startCommand('ERASE')}>
-                                    <FaEraser /> <span>Erase</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M18 12 L21 9" />
+                                        <path d="M21 9 L15 3 L3 15 L9 21 L15 15" />
+                                        <line x1="18" y1="21" x2="22" y2="21" />
+                                    </svg>
+                                    <span>Erase</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'EXPLODE' ? 'active' : ''}`} onClick={() => startCommand('EXPLODE')}>
-                                    <FaObjectUngroup /> <span>Explode</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <rect x="8" y="8" width="8" height="8" />
+                                        <path d="M8 8 L4 4" />
+                                        <path d="M16 8 L20 4" />
+                                        <path d="M8 16 L4 20" />
+                                        <path d="M16 16 L20 20" />
+                                    </svg>
+                                    <span>Explode</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'CHAMFER' ? 'active' : ''}`} onClick={() => startCommand('CHAMFER')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M4 20 L4 10 L14 10" />
+                                        <path d="M4 10 L10 4" strokeDasharray="2,2" />
+                                    </svg>
+                                    <span>Chamfer</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'STRETCH' ? 'active' : ''}`} onClick={() => startCommand('STRETCH')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <rect x="4" y="4" width="8" height="16" strokeDasharray="2,2" />
+                                        <path d="M12 4 L20 4 L20 20 L12 20" />
+                                        <line x1="8" y1="12" x2="16" y2="12" />
+                                        <path d="M14 10 L16 12 L14 14" />
+                                    </svg>
+                                    <span>Stretch</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'BREAK' ? 'active' : ''}`} onClick={() => startCommand('BREAK')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="2" y1="12" x2="9" y2="12" />
+                                        <line x1="15" y1="12" x2="22" y2="12" />
+                                        <circle cx="12" cy="12" r="2" fill="currentColor" />
+                                    </svg>
+                                    <span>Break</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'JOIN' ? 'active' : ''}`} onClick={() => startCommand('JOIN')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="12" x2="10" y2="12" />
+                                        <line x1="14" y1="12" x2="20" y2="12" />
+                                        <path d="M10 12 L14 12" strokeDasharray="2,2" />
+                                        <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                                    </svg>
+                                    <span>Join</span>
                                 </button>
                             </div>
                             <div className="panel-label">Modify <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
@@ -753,28 +911,99 @@ const Ribbon = () => {
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className={`tool-btn ${activeCommand === 'TEXT' ? 'active' : ''}`} onClick={() => startCommand('TEXT')}>
-                                    <FaFont /> <span>Text</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M4 20 L12 4 L20 20" />
+                                        <line x1="8" y1="12" x2="16" y2="12" />
+                                    </svg>
+                                    <span>Text</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'MTEXT' ? 'active' : ''}`} onClick={() => startCommand('MTEXT')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>text_fields</span> <span>MText</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M4 20 L8 4 L12 20 L16 4 L20 20" />
+                                    </svg>
+                                    <span>MText</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMLINEAR' ? 'active' : ''}`} onClick={() => startCommand('DIMLINEAR')}>
-                                    <TbLine /> <span>Linear</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="20" x2="4" y2="8" />
+                                        <line x1="20" y1="20" x2="20" y2="8" />
+                                        <line x1="4" y1="10" x2="20" y2="10" />
+                                        <path d="M4 10 L6 8 M4 10 L6 12 M20 10 L18 8 M20 10 L18 12" />
+                                    </svg>
+                                    <span>Linear</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMALIGNED' ? 'active' : ''}`} onClick={() => startCommand('DIMALIGNED')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>straighten</span> <span>Aligned</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="18" x2="8" y2="6" />
+                                        <line x1="16" y1="22" x2="20" y2="10" />
+                                        <line x1="6" y1="12" x2="18" y2="16" />
+                                        <path d="M6 12 L8 14 M6 12 L7 10 M18 16 L17 14 M18 16 L16 18" />
+                                    </svg>
+                                    <span>Aligned</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMANGULAR' ? 'active' : ''}`} onClick={() => startCommand('DIMANGULAR')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>architecture</span> <span>Angle</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="20" x2="20" y2="20" />
+                                        <line x1="4" y1="20" x2="16" y2="8" />
+                                        <path d="M10 20 Q10 16 13 14" />
+                                    </svg>
+                                    <span>Angle</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMRADIUS' ? 'active' : ''}`} onClick={() => startCommand('DIMRADIUS')}>
-                                    <span className="material-icons" style={{ fontSize: '16px' }}>radio_button_checked</span> <span>Radius</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="8" />
+                                        <line x1="12" y1="12" x2="18" y2="6" />
+                                        <path d="M12 12 L14 10 M12 12 L14 14" />
+                                    </svg>
+                                    <span>Radius</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'TABLE' ? 'active' : ''}`} onClick={() => startCommand('TABLE')}>
-                                    <FaTable /> <span>Table</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <rect x="4" y="4" width="16" height="16" />
+                                        <line x1="4" y1="10" x2="20" y2="10" />
+                                        <line x1="4" y1="16" x2="20" y2="16" />
+                                        <line x1="10" y1="4" x2="10" y2="20" />
+                                        <line x1="16" y1="4" x2="16" y2="20" />
+                                    </svg>
+                                    <span>Table</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'LEADER' ? 'active' : ''}`} onClick={() => startCommand('LEADER')}>
-                                    <FaProjectDiagram /> <span>Leader</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M16 8 L22 8" />
+                                        <path d="M16 8 L4 20" />
+                                        <path d="M4 20 L8 20 M4 20 L4 16" />
+                                    </svg>
+                                    <span>Leader</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DIMDIAMETER' ? 'active' : ''}`} onClick={() => startCommand('DIMDIAMETER')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="8" />
+                                        <line x1="4" y1="12" x2="20" y2="12" />
+                                    </svg>
+                                    <span>Diameter</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DIMCONTINUE' ? 'active' : ''}`} onClick={() => startCommand('DIMCONTINUE')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="2" y1="8" x2="22" y2="8" />
+                                        <line x1="6" y1="4" x2="6" y2="12" />
+                                        <line x1="12" y1="4" x2="12" y2="12" />
+                                        <line x1="18" y1="4" x2="18" y2="12" />
+                                    </svg>
+                                    <span>Continue</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'DIMBASELINE' ? 'active' : ''}`} onClick={() => startCommand('DIMBASELINE')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="20" x2="4" y2="4" />
+                                        <line x1="4" y1="8" x2="16" y2="8" />
+                                        <line x1="4" y1="14" x2="20" y2="14" />
+                                    </svg>
+                                    <span>Baseline</span>
+                                </button>
+                                <button className={`tool-btn ${activeCommand === 'BOUNDARY' ? 'active' : ''}`} onClick={() => startCommand('BOUNDARY')}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <rect x="4" y="4" width="16" height="16" strokeDasharray="4,2" />
+                                    </svg>
+                                    <span>Boundary</span>
                                 </button>
                             </div>
                             <div className="panel-label">Annotation <span className="material-icons" style={{ fontSize: '10px' }}>arrow_drop_down</span></div>
@@ -993,10 +1222,17 @@ const Ribbon = () => {
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className={`tool-btn ${activeCommand === 'MTEXT' ? 'active' : ''}`} onClick={() => startCommand('MTEXT')}>
-                                    <span className="material-icons">text_fields</span> <span>Multiline Text</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M4 20 L8 4 L12 20 L16 4 L20 20" />
+                                    </svg>
+                                    <span>Multiline Text</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'TEXT' ? 'active' : ''}`} onClick={() => startCommand('TEXT')}>
-                                    <FaFont /> <span>Single Text</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M4 20 L12 4 L20 20" />
+                                        <line x1="8" y1="12" x2="16" y2="12" />
+                                    </svg>
+                                    <span>Single Text</span>
                                 </button>
                             </div>
                             <div className="panel-label">Text</div>
@@ -1004,19 +1240,45 @@ const Ribbon = () => {
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className={`tool-btn ${activeCommand === 'DIMLINEAR' ? 'active' : ''}`} onClick={() => startCommand('DIMLINEAR')}>
-                                    <TbLine /> <span>Linear</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="20" x2="4" y2="8" />
+                                        <line x1="20" y1="20" x2="20" y2="8" />
+                                        <line x1="4" y1="10" x2="20" y2="10" />
+                                        <path d="M4 10 L6 8 M4 10 L6 12 M20 10 L18 8 M20 10 L18 12" />
+                                    </svg>
+                                    <span>Linear</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMALIGNED' ? 'active' : ''}`} onClick={() => startCommand('DIMALIGNED')}>
-                                    <span className="material-icons">straighten</span> <span>Aligned</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="18" x2="8" y2="6" />
+                                        <line x1="16" y1="22" x2="20" y2="10" />
+                                        <line x1="6" y1="12" x2="18" y2="16" />
+                                        <path d="M6 12 L8 14 M6 12 L7 10 M18 16 L17 14 M18 16 L16 18" />
+                                    </svg>
+                                    <span>Aligned</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMANGULAR' ? 'active' : ''}`} onClick={() => startCommand('DIMANGULAR')}>
-                                    <span className="material-icons">architecture</span> <span>Angular</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <line x1="4" y1="20" x2="20" y2="20" />
+                                        <line x1="4" y1="20" x2="16" y2="8" />
+                                        <path d="M10 20 Q10 16 13 14" />
+                                    </svg>
+                                    <span>Angular</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMRADIUS' ? 'active' : ''}`} onClick={() => startCommand('DIMRADIUS')}>
-                                    <span className="material-icons">radio_button_checked</span> <span>Radius</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="8" />
+                                        <line x1="12" y1="12" x2="18" y2="6" />
+                                        <path d="M12 12 L14 10 M12 12 L14 14" />
+                                    </svg>
+                                    <span>Radius</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'DIMDIAMETER' ? 'active' : ''}`} onClick={() => startCommand('DIMDIAMETER')}>
-                                    <span className="material-icons">data_usage</span> <span>Diameter</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <circle cx="12" cy="12" r="8" />
+                                        <line x1="4" y1="12" x2="20" y2="12" />
+                                    </svg>
+                                    <span>Diameter</span>
                                 </button>
                             </div>
                             <div className="panel-label">Dimensions</div>
@@ -1024,10 +1286,22 @@ const Ribbon = () => {
                         <div className="ribbon-panel">
                             <div className="tool-grid">
                                 <button className={`tool-btn ${activeCommand === 'LEADER' ? 'active' : ''}`} onClick={() => startCommand('LEADER')}>
-                                    <FaProjectDiagram /> <span>Leader</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M16 8 L22 8" />
+                                        <path d="M16 8 L4 20" />
+                                        <path d="M4 20 L8 20 M4 20 L4 16" />
+                                    </svg>
+                                    <span>Leader</span>
                                 </button>
                                 <button className={`tool-btn ${activeCommand === 'TABLE' ? 'active' : ''}`} onClick={() => startCommand('TABLE')}>
-                                    <FaTable /> <span>Table</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <rect x="4" y="4" width="16" height="16" />
+                                        <line x1="4" y1="10" x2="20" y2="10" />
+                                        <line x1="4" y1="16" x2="20" y2="16" />
+                                        <line x1="10" y1="4" x2="10" y2="20" />
+                                        <line x1="16" y1="4" x2="16" y2="20" />
+                                    </svg>
+                                    <span>Table</span>
                                 </button>
                             </div>
                             <div className="panel-label">Leaders & Tables</div>

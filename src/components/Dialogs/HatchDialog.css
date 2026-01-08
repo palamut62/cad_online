@@ -365,3 +365,40 @@
 ::-webkit-scrollbar-thumb:hover {
     background: #444;
 }
+
+/* Custom Pattern Delete Button */
+.delete-pattern-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    background: rgba(220, 53, 69, 0.8);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: background 0.2s;
+}
+
+.pattern-item {
+    position: relative;
+    /* Ensure existing styles are compatible */
+}
+
+.pattern-item:hover .delete-pattern-btn {
+    display: flex;
+}
+
+.delete-pattern-btn:hover {
+    background: #dc3545;
+}
+
+.delete-pattern-btn .material-icons {
+    font-size: 12px;
+}

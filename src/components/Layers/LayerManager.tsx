@@ -21,6 +21,8 @@ const LayerManager: React.FC<LayerManagerProps> = ({ onClose }) => {
     } = useDrawing();
 
     const [newLayerName, setNewLayerName] = useState('');
+    const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+    const [editingName, setEditingName] = useState('');
 
     const handleAddLayer = () => {
         const name = newLayerName.trim() || `Layer ${layers.length + 1}`;
@@ -42,6 +44,23 @@ const LayerManager: React.FC<LayerManagerProps> = ({ onClose }) => {
 
     const handleColorChange = (id: string, color: string) => {
         updateLayer(id, { color });
+    };
+
+    const startEditing = (layer: Layer) => {
+        setEditingLayerId(layer.id);
+        setEditingName(layer.name);
+    };
+
+    const saveLayerName = () => {
+        if (editingLayerId && editingName.trim()) {
+            updateLayer(editingLayerId, { name: editingName.trim() });
+        }
+        cancelEditing();
+    };
+
+    const cancelEditing = () => {
+        setEditingLayerId(null);
+        setEditingName('');
     };
 
     return (
@@ -99,8 +118,31 @@ const LayerManager: React.FC<LayerManagerProps> = ({ onClose }) => {
                         <div className="col-status">
                             {activeLayerId === layer.id && <span className="material-icons active-icon">check</span>}
                         </div>
-                        <div className="col-name">
-                            {layer.name}
+                        <div
+                            className="col-name"
+                            onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                startEditing(layer);
+                            }}
+                        >
+                            {editingLayerId === layer.id ? (
+                                <input
+                                    type="text"
+                                    className="layer-name-edit"
+                                    value={editingName}
+                                    onChange={(e) => setEditingName(e.target.value)}
+                                    onBlur={saveLayerName}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') saveLayerName();
+                                        if (e.key === 'Escape') cancelEditing();
+                                        e.stopPropagation(); // Prevent triggering other key handlers
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    autoFocus
+                                />
+                            ) : (
+                                layer.name
+                            )}
                         </div>
                         <div className="col-color">
                             <input

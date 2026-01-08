@@ -168,3 +168,17 @@ input[type="color"] {
     background: none;
     cursor: pointer;
 }
+
+/* Layer Name Editing */
+.col-name input.layer-name-edit {
+    width: 100%;
+    background: #222;
+    border: 1px solid #4CAF50;
+    color: white;
+    padding: 2px 4px;
+    border-radius: 2px;
+    font-size: inherit;
+    font-family: inherit;
+    outline: none;
+    box-sizing: border-box;
+}

@@ -1037,3 +1037,79 @@ export const scaleEntity = (ent: Entity, factor: number): Entity => {
 
   return e;
 };
+
+/**
+ * Create arc from 3 points (Start, Mid, End)
+ * Ensures the arc passes accurately through the midpoint.
+ */
+export const createArcFrom3Points = (p1: Point, p2: Point, p3: Point): {
+  center: Point;
+  radius: number;
+  startAngle: number;
+  endAngle: number;
+  counterClockwise: boolean;
+} | null => {
+  const x1 = p1[0], y1 = p1[1];
+  const x2 = p2[0], y2 = p2[1];
+  const x3 = p3[0], y3 = p3[1];
+
+  const D = 2 * (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2));
+  if (Math.abs(D) < 0.0001) return null; // Points are collinear
+
+  const Ux = ((x1 * x1 + y1 * y1) * (y2 - y3) + (x2 * x2 + y2 * y2) * (y3 - y1) + (x3 * x3 + y3 * y3) * (y1 - y2)) / D;
+  const Uy = ((x1 * x1 + y1 * y1) * (x3 - x2) + (x2 * x2 + y2 * y2) * (x1 - x3) + (x3 * x3 + y3 * y3) * (x2 - x1)) / D;
+
+  const radius = Math.sqrt((x1 - Ux) * (x1 - Ux) + (y1 - Uy) * (y1 - Uy));
+  const center: Point = [Ux, Uy, 0];
+
+  let startAngle = Math.atan2(y1 - Uy, x1 - Ux);
+  let midAngle = Math.atan2(y2 - Uy, x2 - Ux);
+  let endAngle = Math.atan2(y3 - Uy, x3 - Ux);
+
+  // Normalize angles to 0-2PI
+  startAngle = normalizeAngle(startAngle);
+  midAngle = normalizeAngle(midAngle);
+  endAngle = normalizeAngle(endAngle);
+
+  // Determine direction: Is midAngle between start and end in CCW direction?
+  // Check if going CCW from start reaches mid before end
+  let isCCW = false;
+
+  if (startAngle < endAngle) {
+    if (midAngle > startAngle && midAngle < endAngle) {
+      isCCW = true;
+    }
+  } else {
+    // Crosses 0 boundary
+    if (midAngle > startAngle || midAngle < endAngle) {
+      isCCW = true;
+    }
+  }
+
+  // AutoCAD usually defines arcs CCW. If our 3 points imply CW, swap angles or set flag?
+  // Standard CAD entities (DXF) are CCW. If the user drew CW, we swap start/end?
+  // No, valid arc can be drawn in any order but stored as CCW from Start to End.
+  // BUT: "Start" point of the entity might be different from P1 if we normalize to CCW.
+  // Actually, p1 is the visual start point. If the arc goes CW from p1->p3, 
+  // then physically the arc entity starts at p3 and goes CCW to p1.
+  // However, we want to preserve p1 as the logical start if possible? 
+  // Standard practice: Store as center, radius, startAngle, endAngle (always CCW).
+
+  let finalStartAngle = startAngle;
+  let finalEndAngle = endAngle;
+
+  if (!isCCW) {
+    // The arc is CW from p1 to p3.
+    // In CCW system, this means it starts at p3 and ends at p1.
+    finalStartAngle = endAngle;
+    finalEndAngle = startAngle;
+  }
+
+  return {
+    center,
+    radius,
+    startAngle: finalStartAngle,
+    endAngle: finalEndAngle,
+    counterClockwise: false // Always return CCW definition for renderer
+  };
+};

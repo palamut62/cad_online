@@ -59,7 +59,10 @@ const MainLayout = () => {
         // Print
         setPrintDialogState,
         // Zoom to fit
-        triggerZoomToFit
+        triggerZoomToFit,
+        finishPolyline,
+        triggerPan,
+        triggerView
     } = useDrawing();
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -84,6 +87,16 @@ const MainLayout = () => {
                     cancelCommand();
                 } else if (selectedIds.size > 0) {
                     clearSelection();
+                }
+            } else if (e.key === 'Enter') {
+                if (activeCommand === 'POLYLINE') {
+                    finishPolyline();
+                } else if (activeCommand === 'SPLINE') {
+                    // SPLINE finishes on Enter (saves current points)
+                    cancelCommand(true);
+                } else if (activeCommand === 'LINE' || activeCommand === 'ARC') {
+                    // LINE/ARC finish on Enter (stop drawing)
+                    cancelCommand(false);
                 }
             }
         };
@@ -174,14 +187,14 @@ const MainLayout = () => {
                     {/* ViewCube */}
                     <div className="view-cube-container">
                         <div className="view-cube-compass">
-                            <span className="compass-label n">N</span>
-                            <span className="compass-label e">E</span>
-                            <span className="compass-label s">S</span>
-                            <span className="compass-label w">W</span>
+                            <span className="compass-label n" onClick={() => triggerPan(0, 1)} title="Pan Up">N</span>
+                            <span className="compass-label e" onClick={() => triggerPan(1, 0)} title="Pan Right">E</span>
+                            <span className="compass-label s" onClick={() => triggerPan(0, -1)} title="Pan Down">S</span>
+                            <span className="compass-label w" onClick={() => triggerPan(-1, 0)} title="Pan Left">W</span>
                             <div className="view-cube-ring"></div>
                         </div>
                         <div className="view-cube-box">
-                            <div className="cube-face top">TOP</div>
+                            <div className="cube-face top" onClick={() => triggerView('TOP')} title="Reset View">TOP</div>
                         </div>
                     </div>
 

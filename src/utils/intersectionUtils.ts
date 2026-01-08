@@ -48,7 +48,7 @@ export function isPointOnSegment(point: Point, segStart: Point, segEnd: Point, t
   if (!t) return false;
 
   const param = ((point[0] - segStart[0]) * (segEnd[0] - segStart[0]) +
-                 (point[1] - segStart[1]) * (segEnd[1] - segStart[1]));
+    (point[1] - segStart[1]) * (segEnd[1] - segStart[1]));
   const lenSq = Math.pow(segEnd[0] - segStart[0], 2) + Math.pow(segEnd[1] - segStart[1], 2);
 
   if (Math.abs(lenSq) < tolerance) return false;
@@ -334,7 +334,7 @@ export function findEntityIntersections(entity1: Entity, entity2: Entity): Inter
   if (entity1.type === 'LINE' && entity2.type === 'LINE') {
     const result = lineLineIntersection(entity1.start, entity1.end, entity2.start, entity2.end);
     if (result && isPointOnSegment(result.point, entity1.start, entity1.end) &&
-        isPointOnSegment(result.point, entity2.start, entity2.end)) {
+      isPointOnSegment(result.point, entity2.start, entity2.end)) {
       return [result];
     }
     return [];
@@ -383,6 +383,35 @@ export function findEntityIntersections(entity1: Entity, entity2: Entity): Inter
     );
   }
 
+  // Handle LWPOLYLINE by breaking it into segments
+  if (entity1.type === 'LWPOLYLINE') {
+    const results: IntersectionResult[] = [];
+    const vertices = entity1.vertices;
+    for (let i = 0; i < vertices.length - 1; i++) {
+      const segment = { ...entity1, type: 'LINE', start: vertices[i], end: vertices[i + 1] } as any;
+      results.push(...findEntityIntersections(segment, entity2));
+    }
+    if (entity1.closed && vertices.length > 2) {
+      const segment = { ...entity1, type: 'LINE', start: vertices[vertices.length - 1], end: vertices[0] } as any;
+      results.push(...findEntityIntersections(segment, entity2));
+    }
+    return results;
+  }
+
+  if (entity2.type === 'LWPOLYLINE') {
+    const results: IntersectionResult[] = [];
+    const vertices = entity2.vertices;
+    for (let i = 0; i < vertices.length - 1; i++) {
+      const segment = { ...entity2, type: 'LINE', start: vertices[i], end: vertices[i + 1] } as any;
+      results.push(...findEntityIntersections(entity1, segment));
+    }
+    if (entity2.closed && vertices.length > 2) {
+      const segment = { ...entity2, type: 'LINE', start: vertices[vertices.length - 1], end: vertices[0] } as any;
+      results.push(...findEntityIntersections(entity1, segment));
+    }
+    return results;
+  }
+
   return [];
 }
 
@@ -396,74 +425,64 @@ export function trimLineEntity(
 ): Entity[] {
   if (lineEntity.type !== 'LINE') return [lineEntity];
 
-  // Find all intersection points with cutting edges
-  const intersections: { point: Point; t: number }[] = [];
+  // Collect all break points as t-parameters [0...1]
+  const tValues: number[] = [0, 1];
+  const dx = lineEntity.end[0] - lineEntity.start[0];
+  const dy = lineEntity.end[1] - lineEntity.start[1];
+  const lenSq = dx * dx + dy * dy;
+
+  if (lenSq < 0.0001) return [lineEntity];
 
   for (const cutter of cuttingEdges) {
     const results = findEntityIntersections(lineEntity, cutter);
-    for (const result of results) {
-      // Calculate parameter t for the line
-      const dx = lineEntity.end[0] - lineEntity.start[0];
-      const dy = lineEntity.end[1] - lineEntity.start[1];
-      const len = Math.sqrt(dx * dx + dy * dy);
-      if (len < 0.0001) continue;
-
-      const t = ((result.point[0] - lineEntity.start[0]) * dx +
-                 (result.point[1] - lineEntity.start[1]) * dy) / (len * len);
-
-      if (t > 0.001 && t < 0.999) { // Exclude endpoints
-        intersections.push({ point: result.point, t });
+    for (const res of results) {
+      const t = ((res.point[0] - lineEntity.start[0]) * dx + (res.point[1] - lineEntity.start[1]) * dy) / lenSq;
+      if (t > 0.00001 && t < 0.99999) {
+        tValues.push(t);
       }
     }
   }
 
-  if (intersections.length === 0) return []; // Delete entire line if no intersections
-
-  // Sort intersections by parameter t
-  intersections.sort((a, b) => a.t - b.t);
-
-  // Find which segment contains the click point
-  const clickT = (() => {
-    const dx = lineEntity.end[0] - lineEntity.start[0];
-    const dy = lineEntity.end[1] - lineEntity.start[1];
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 0.0001) return 0;
-    return ((clickPoint[0] - lineEntity.start[0]) * dx +
-            (clickPoint[1] - lineEntity.start[1]) * dy) / (len * len);
-  })();
-
-  // Build segments
-  const segments: Entity[] = [];
-  let prevPoint = lineEntity.start;
-  let prevT = 0;
-
-  for (const intersection of intersections) {
-    // Check if click point is in this segment
-    if (clickT >= prevT && clickT <= intersection.t) {
-      // Skip this segment (it contains the click point)
-    } else {
-      // Keep this segment
-      segments.push({
-        ...lineEntity,
-        id: Date.now() + Math.random(),
-        start: prevPoint,
-        end: intersection.point,
-      } as Entity);
+  // Sort and remove duplicates
+  tValues.sort((a, b) => a - b);
+  const uniqueTs: number[] = [];
+  for (let i = 0; i < tValues.length; i++) {
+    if (i === 0 || tValues[i] - tValues[i - 1] > 0.00001) {
+      uniqueTs.push(tValues[i]);
     }
-    prevPoint = intersection.point;
-    prevT = intersection.t;
   }
 
-  // Last segment
-  if (clickT >= prevT && clickT <= 1) {
-    // Skip - click is in last segment
-  } else {
-    segments.push({
-      ...lineEntity,
-      id: Date.now() + Math.random(),
-      start: prevPoint,
-      end: lineEntity.end,
-    } as Entity);
+  if (uniqueTs.length < 2) return [lineEntity];
+
+  // Map segments and find the one containing the click
+  const clickT = ((clickPoint[0] - lineEntity.start[0]) * dx + (clickPoint[1] - lineEntity.start[1]) * dy) / lenSq;
+  const segments: Entity[] = [];
+  const EPS = 0.001;
+  const dz = (lineEntity.end[2] || 0) - (lineEntity.start[2] || 0);
+
+  for (let i = 0; i < uniqueTs.length - 1; i++) {
+    const t0 = uniqueTs[i];
+    const t1 = uniqueTs[i + 1];
+
+    // Check if this is the segment being clicked
+    if (clickT >= t0 - EPS && clickT <= t1 + EPS) {
+      // Remove this segment (do not push to segments)
+    } else {
+      segments.push({
+        ...lineEntity,
+        id: Date.now() + Math.random() + i * 0.001,
+        start: [
+          lineEntity.start[0] + dx * t0,
+          lineEntity.start[1] + dy * t0,
+          (lineEntity.start[2] || 0) + dz * t0
+        ],
+        end: [
+          lineEntity.start[0] + dx * t1,
+          lineEntity.start[1] + dy * t1,
+          (lineEntity.start[2] || 0) + dz * t1
+        ]
+      } as Entity);
+    }
   }
 
   return segments;
@@ -479,83 +498,60 @@ export function trimArcEntity(
 ): Entity[] {
   if (arcEntity.type !== 'ARC') return [arcEntity];
 
-  // Find all intersection points
-  const intersections: { point: Point; angle: number }[] = [];
+  const startAngle = arcEntity.startAngle;
+  // Final angle is greater than startAngle for logical sorting
+  let endAngle = arcEntity.endAngle;
+  while (endAngle <= startAngle) endAngle += Math.PI * 2;
+
+  const angles: number[] = [startAngle, endAngle];
+
+  // Helper to normalize angle into [startAngle, startAngle + 2PI] range
+  const norm = (a: number) => {
+    let res = a;
+    while (res < startAngle) res += Math.PI * 2;
+    while (res >= startAngle + Math.PI * 2) res -= Math.PI * 2;
+    return res;
+  };
 
   for (const cutter of cuttingEdges) {
     const results = findEntityIntersections(arcEntity, cutter);
-    for (const result of results) {
-      const angle = Math.atan2(
-        result.point[1] - arcEntity.center[1],
-        result.point[0] - arcEntity.center[0]
-      );
-      intersections.push({ point: result.point, angle });
+    for (const res of results) {
+      const angle = Math.atan2(res.point[1] - arcEntity.center[1], res.point[0] - arcEntity.center[0]);
+      const nAngle = norm(angle);
+      if (nAngle > startAngle + 0.0001 && nAngle < endAngle - 0.0001) {
+        angles.push(nAngle);
+      }
     }
   }
 
-  if (intersections.length === 0) return []; // Delete entire arc
+  angles.sort((a, b) => a - b);
+  const uniqueAngles: number[] = [];
+  for (let i = 0; i < angles.length; i++) {
+    if (i === 0 || angles[i] - angles[i - 1] > 0.0001) {
+      uniqueAngles.push(angles[i]);
+    }
+  }
 
-  // Normalize angles
-  const normalizeAngle = (angle: number, reference: number) => {
-    let normalized = angle;
-    while (normalized < reference) normalized += Math.PI * 2;
-    while (normalized > reference + Math.PI * 2) normalized -= Math.PI * 2;
-    return normalized;
-  };
+  if (uniqueAngles.length < 2) return [arcEntity];
 
-  const startAngle = arcEntity.startAngle;
-  const endAngle = normalizeAngle(arcEntity.endAngle, startAngle);
-
-  // Normalize intersection angles
-  intersections.forEach(inter => {
-    inter.angle = normalizeAngle(inter.angle, startAngle);
-  });
-
-  // Sort by angle
-  intersections.sort((a, b) => a.angle - b.angle);
-
-  // Filter intersections that are actually on the arc
-  const validIntersections = intersections.filter(
-    inter => inter.angle >= startAngle && inter.angle <= endAngle
-  );
-
-  if (validIntersections.length === 0) return []; // Delete entire arc
-
-  // Find click angle
-  const clickAngle = normalizeAngle(
-    Math.atan2(clickPoint[1] - arcEntity.center[1], clickPoint[0] - arcEntity.center[0]),
-    startAngle
-  );
-
-  // Build arc segments
+  const clickAngle = norm(Math.atan2(clickPoint[1] - arcEntity.center[1], clickPoint[0] - arcEntity.center[0]));
   const segments: Entity[] = [];
-  let prevAngle = startAngle;
+  const EPS = 0.005;
 
-  for (const intersection of validIntersections) {
-    // Check if click is in this segment
-    if (clickAngle >= prevAngle && clickAngle <= intersection.angle) {
-      // Skip this segment
+  for (let i = 0; i < uniqueAngles.length - 1; i++) {
+    const a0 = uniqueAngles[i];
+    const a1 = uniqueAngles[i + 1];
+
+    if (clickAngle >= a0 - EPS && clickAngle <= a1 + EPS) {
+      // Trimmed
     } else {
       segments.push({
         ...arcEntity,
-        id: Date.now() + Math.random(),
-        startAngle: prevAngle,
-        endAngle: intersection.angle,
+        id: Date.now() + Math.random() + i * 0.001,
+        startAngle: a0,
+        endAngle: a1
       } as Entity);
     }
-    prevAngle = intersection.angle;
-  }
-
-  // Last segment
-  if (clickAngle >= prevAngle && clickAngle <= endAngle) {
-    // Skip
-  } else {
-    segments.push({
-      ...arcEntity,
-      id: Date.now() + Math.random(),
-      startAngle: prevAngle,
-      endAngle: endAngle,
-    } as Entity);
   }
 
   return segments;
@@ -585,7 +581,7 @@ export function trimCircleEntity(
     }
   }
 
-  if (intersections.length < 2) return []; // Need at least 2 intersections to trim a circle
+  if (intersections.length < 2) return [circleEntity]; // Return original if cannot trim
 
   // Sort by angle
   intersections.sort((a, b) => a.angle - b.angle);
@@ -705,14 +701,14 @@ export function extendLineEntity(
       // Check if point is in correct direction
       if (extendStart) {
         const dotProduct = (result.point[0] - lineEntity.start[0]) * (-dirX) +
-                          (result.point[1] - lineEntity.start[1]) * (-dirY);
+          (result.point[1] - lineEntity.start[1]) * (-dirY);
         if (dotProduct > 0 && distFromOriginal < minDist) {
           minDist = distFromOriginal;
           closestIntersection = result.point;
         }
       } else {
         const dotProduct = (result.point[0] - lineEntity.end[0]) * dirX +
-                          (result.point[1] - lineEntity.end[1]) * dirY;
+          (result.point[1] - lineEntity.end[1]) * dirY;
         if (dotProduct > 0 && distFromOriginal < minDist) {
           minDist = distFromOriginal;
           closestIntersection = result.point;
@@ -912,7 +908,7 @@ export function trimPolylineEntity(
       if (len < 0.0001) continue;
 
       const t = ((result.point[0] - segStart[0]) * dx +
-                 (result.point[1] - segStart[1]) * dy) / (len * len);
+        (result.point[1] - segStart[1]) * dy) / (len * len);
 
       if (t > 0.001 && t < 0.999) {
         intersections.push({ point: result.point, t });

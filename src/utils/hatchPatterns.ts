@@ -351,7 +351,26 @@ export const getPatternPreview = (patternName: string, size: number = 32): strin
 };
 
 /**
- * Add a custom image pattern to the registry
+ * Persistence Key
+ */
+const STORAGE_KEY = 'CAD_CUSTOM_PATTERNS';
+
+/**
+ * Helper to sync custom patterns to localStorage
+ */
+const saveCustomPatterns = () => {
+    if (typeof window === 'undefined') return;
+    const customPatterns: Record<string, HatchPatternConfig> = {};
+    Object.entries(PRESET_PATTERNS).forEach(([k, v]) => {
+        if (v.category === 'custom') {
+            customPatterns[k] = v;
+        }
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(customPatterns));
+};
+
+/**
+ * Add a custom image pattern to the registry and storage
  */
 export const addCustomPattern = (name: string, imageData: string) => {
     const id = `CUSTOM_${Date.now()}`;
@@ -364,5 +383,29 @@ export const addCustomPattern = (name: string, imageData: string) => {
         category: 'custom',
         imageData: imageData
     };
+    saveCustomPatterns();
     return id;
 };
+
+/**
+ * Delete a custom pattern from registry and storage
+ */
+export const deleteCustomPattern = (id: string) => {
+    if (PRESET_PATTERNS[id]) {
+        delete PRESET_PATTERNS[id];
+        saveCustomPatterns();
+    }
+};
+
+// Initial Load from Storage (Self-executing on module load)
+if (typeof window !== 'undefined') {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            Object.assign(PRESET_PATTERNS, parsed);
+        }
+    } catch (e) {
+        console.warn('Failed to recover custom patterns', e);
+    }
+}

@@ -280,6 +280,29 @@ const DimensionInputPanel: React.FC<DimensionInputProps> = ({ position, length, 
 const DynamicInput = () => {
     const { activeCommand, tempPoints, cursorPosition, step, baseUnit, drawingUnit, activeGrip, handleCommandInput } = useDrawing();
 
+    // Handle dimension input submit - calculate new point based on length and angle
+    // Moved to top-level to comply with Rules of Hooks
+    const handleDimensionSubmit = useCallback((inputLength: number, inputAngle: number) => {
+        if (!tempPoints || tempPoints.length === 0) return;
+        const lastPoint = tempPoints[tempPoints.length - 1];
+
+        // Convert angle to radians
+        const angleRad = inputAngle * Math.PI / 180;
+
+        // Convert length from drawing unit to base unit
+        const lengthInBaseUnit = convertToUnit(inputLength, drawingUnit, baseUnit);
+
+        // Calculate new point
+        const newPoint: Point = [
+            lastPoint[0] + Math.cos(angleRad) * lengthInBaseUnit,
+            lastPoint[1] + Math.sin(angleRad) * lengthInBaseUnit,
+            lastPoint[2] || 0
+        ];
+
+        // Call handleCommandInput with the new point
+        handleCommandInput(newPoint);
+    }, [tempPoints, drawingUnit, baseUnit, handleCommandInput]);
+
     // Grip düzenleme modu için ölçü gösterimi
     if (activeGrip) {
         const startPoint = activeGrip.startPoint;
@@ -426,26 +449,7 @@ const DynamicInput = () => {
         0.1
     ];
 
-    // Handle dimension input submit - calculate new point based on length and angle
-    const handleDimensionSubmit = useCallback((inputLength: number, inputAngle: number) => {
-        if (!lastPoint) return;
 
-        // Convert angle to radians
-        const angleRad = inputAngle * Math.PI / 180;
-
-        // Convert length from drawing unit to base unit
-        const lengthInBaseUnit = convertToUnit(inputLength, drawingUnit, baseUnit);
-
-        // Calculate new point
-        const newPoint: Point = [
-            lastPoint[0] + Math.cos(angleRad) * lengthInBaseUnit,
-            lastPoint[1] + Math.sin(angleRad) * lengthInBaseUnit,
-            lastPoint[2] || 0
-        ];
-
-        // Call handleCommandInput with the new point
-        handleCommandInput(newPoint);
-    }, [lastPoint, drawingUnit, baseUnit, handleCommandInput]);
 
     // LINE ve POLYLINE için
     if (activeCommand === 'LINE' || activeCommand === 'POLYLINE') {
@@ -640,6 +644,151 @@ const DynamicInput = () => {
                 >
                     <div style={styles.coordTooltip}>
                         {formatSize(width, height, drawingUnit)}
+                    </div>
+                </Html>
+            </group>
+        );
+    }
+
+    // POLYGON için
+    if (activeCommand === 'POLYGON') {
+        if (step === 2) {
+            // Center to Vertex/Edge
+            const radius = convertToUnit(rawDist, baseUnit, drawingUnit);
+            const radiusMidPoint: Point = [
+                (lastPoint[0] + cursorPosition[0]) / 2,
+                (lastPoint[1] + cursorPosition[1]) / 2,
+                0.1
+            ];
+            return (
+                <group>
+                    <Html
+                        position={radiusMidPoint}
+                        style={{ pointerEvents: 'none', transform: 'translate(0, -15px)' }}
+                        zIndexRange={[100, 0]}
+                        center
+                    >
+                        <div style={styles.radiusLabel}>
+                            {formatDimension('R = ', radius, drawingUnit)}
+                        </div>
+                    </Html>
+                    <Html
+                        position={[cursorPosition[0], cursorPosition[1], 0.1]}
+                        style={{ pointerEvents: 'none', transform: 'translate(15px, -25px)' }}
+                        zIndexRange={[100, 0]}
+                    >
+                        <div style={styles.coordTooltip}>
+                            {cursorPosition[0].toFixed(2)}, {cursorPosition[1].toFixed(2)}
+                        </div>
+                    </Html>
+                </group>
+            );
+        }
+        return null;
+    }
+
+    // ELLIPSE için
+    if (activeCommand === 'ELLIPSE') {
+        if (step === 2) { // Major axis
+            const axisLength = convertToUnit(rawDist, baseUnit, drawingUnit);
+            const midPoint: Point = [
+                (lastPoint[0] + cursorPosition[0]) / 2,
+                (lastPoint[1] + cursorPosition[1]) / 2,
+                0.1
+            ];
+            return (
+                <group>
+                    <Html
+                        position={midPoint}
+                        style={{ pointerEvents: 'none', transform: 'translate(0, -15px)' }}
+                        zIndexRange={[100, 0]}
+                        center
+                    >
+                        <div style={styles.dimLabel}>
+                            Major: {formatWithUnit(axisLength * 2, drawingUnit)}
+                        </div>
+                    </Html>
+                    <Html
+                        position={[cursorPosition[0], cursorPosition[1], 0.1]}
+                        style={{ pointerEvents: 'none', transform: 'translate(15px, -25px)' }}
+                        zIndexRange={[100, 0]}
+                    >
+                        <div style={styles.coordTooltip}>
+                            {cursorPosition[0].toFixed(2)}, {cursorPosition[1].toFixed(2)}
+                        </div>
+                    </Html>
+                </group>
+            );
+        } else if (step === 3) { // Minor axis
+            // Minor axis distance is typically from center to point
+            const center = [
+                (tempPoints[0][0] + tempPoints[1][0]) / 2,
+                (tempPoints[0][1] + tempPoints[1][1]) / 2,
+                0
+            ];
+            const rawMinorDist = distance2D(center[0], center[1], cursorPosition[0], cursorPosition[1]);
+            const minorRadius = convertToUnit(rawMinorDist, baseUnit, drawingUnit);
+            const radiusMidPoint: Point = [
+                (center[0] + cursorPosition[0]) / 2,
+                (center[1] + cursorPosition[1]) / 2,
+                0.1
+            ];
+
+            return (
+                <group>
+                    <Html
+                        position={radiusMidPoint}
+                        style={{ pointerEvents: 'none', transform: 'translate(0, -15px)' }}
+                        zIndexRange={[100, 0]}
+                        center
+                    >
+                        <div style={styles.radiusLabel}>
+                            Minor R: {formatWithUnit(minorRadius, drawingUnit)}
+                        </div>
+                    </Html>
+                    <Html
+                        position={[cursorPosition[0], cursorPosition[1], 0.1]}
+                        style={{ pointerEvents: 'none', transform: 'translate(15px, -25px)' }}
+                        zIndexRange={[100, 0]}
+                    >
+                        <div style={styles.coordTooltip}>
+                            {cursorPosition[0].toFixed(2)}, {cursorPosition[1].toFixed(2)}
+                        </div>
+                    </Html>
+                </group>
+            );
+        }
+    }
+
+    // SPLINE için
+    if (activeCommand === 'SPLINE' && tempPoints.length > 0) {
+        // Last point is already captured in tempPoints
+        const segmentLength = convertToUnit(rawDist, baseUnit, drawingUnit);
+        const midPoint: Point = [
+            (lastPoint[0] + cursorPosition[0]) / 2,
+            (lastPoint[1] + cursorPosition[1]) / 2,
+            0.1
+        ];
+
+        return (
+            <group>
+                <Html
+                    position={midPoint}
+                    style={{ pointerEvents: 'none', transform: 'translate(0, -15px)' }}
+                    zIndexRange={[100, 0]}
+                    center
+                >
+                    <div style={styles.lengthLabel}>
+                        {formatWithUnit(segmentLength, drawingUnit)}
+                    </div>
+                </Html>
+                <Html
+                    position={[cursorPosition[0], cursorPosition[1], 0.1]}
+                    style={{ pointerEvents: 'none', transform: 'translate(15px, -25px)' }}
+                    zIndexRange={[100, 0]}
+                >
+                    <div style={styles.coordTooltip}>
+                        {cursorPosition[0].toFixed(2)}, {cursorPosition[1].toFixed(2)}
                     </div>
                 </Html>
             </group>

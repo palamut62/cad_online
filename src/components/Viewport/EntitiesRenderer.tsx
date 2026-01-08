@@ -5,7 +5,7 @@ import { Line, Text } from '@react-three/drei';
 import { useDrawing } from '../../context/DrawingContext';
 import type { Point, Entity } from '../../types/entities';
 import { DEFAULT_LAYER } from '../../types/layers';
-import { getGripPoints, rotatePoint } from '../../utils/geometryUtils';
+import { getGripPoints, rotatePoint, createArcFrom3Points } from '../../utils/geometryUtils';
 import { getPatternTexture } from '../../utils/hatchPatterns';
 import { calculateDimensionGeometry } from '../../utils/dimensionUtils';
 import { calculateArrowCoords, formatDimensionValue, DEFAULT_DIMENSION_SETTINGS, type DecimalFormat } from '../../types/dimensionSettings';
@@ -493,11 +493,25 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected, isHovered }: Entit
     }
 
     if (ent.type === 'ELLIPSE') {
-        const points = getCirclePoints(ent.center[0], ent.center[1], ent.center[2] || 0, 1, 64).map((p): Point => [
-            ent.center[0] + (p[0] - ent.center[0]) * ent.rx,
-            ent.center[1] + (p[1] - ent.center[1]) * ent.ry,
-            ent.center[2] || 0
-        ]);
+        const cosR = Math.cos(ent.rotation || 0);
+        const sinR = Math.sin(ent.rotation || 0);
+        const segments = 64;
+        const points: Point[] = [];
+
+        for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2;
+            // Unrotated ellipse point relative to center
+            const dx = Math.cos(angle) * ent.rx;
+            const dy = Math.sin(angle) * ent.ry;
+
+            // Apply rotation and translate to center
+            points.push([
+                ent.center[0] + dx * cosR - dy * sinR,
+                ent.center[1] + dx * sinR + dy * cosR,
+                ent.center[2] || 0
+            ]);
+        }
+
         return (
             <Line
                 points={points}
@@ -1216,13 +1230,41 @@ const EntitiesRenderer = React.memo(() => {
             )}
 
             {activeCommand === 'ARC' && tempPoints.length > 0 && (
-                <Line
-                    points={[...tempPoints, cursorPosition]}
-                    color="cyan"
-                    lineWidth={1}
-                    dashed
-                    dashScale={10}
-                />
+                <>
+
+
+                    {/* Ghost Arc Preview (Step 3) */}
+                    {tempPoints.length === 2 && (() => {
+                        const arc = createArcFrom3Points(tempPoints[0], tempPoints[1], cursorPosition);
+                        if (arc) {
+                            const segments = 64;
+                            const points: Point[] = [];
+                            // Ensure startAngle < endAngle for loop
+                            let start = arc.startAngle;
+                            let end = arc.endAngle;
+                            if (end < start) end += Math.PI * 2;
+
+                            const totalAngle = end - start;
+
+                            for (let i = 0; i <= segments; i++) {
+                                const theta = start + (i / segments) * totalAngle;
+                                points.push([
+                                    arc.center[0] + Math.cos(theta) * arc.radius,
+                                    arc.center[1] + Math.sin(theta) * arc.radius,
+                                    0
+                                ]);
+                            }
+                            return (
+                                <Line
+                                    points={points}
+                                    color="yellow"
+                                    lineWidth={2}
+                                />
+                            );
+                        }
+                        return null;
+                    })()}
+                </>
             )}
 
             {activeCommand === 'POLYLINE' && tempPoints.length > 0 && (
@@ -1296,6 +1338,7 @@ const EntitiesRenderer = React.memo(() => {
 
             {activeCommand === 'SPLINE' && tempPoints.length > 0 && (
                 <>
+                    {/* Control Polygon (Cyan, Dashed) - Restored by user request */}
                     <Line
                         points={tempPoints}
                         color="cyan"
@@ -1303,18 +1346,21 @@ const EntitiesRenderer = React.memo(() => {
                         dashed={true}
                         dashScale={5}
                     />
-                    {tempPoints.length >= 2 && (
+
+                    {/* The Smooth Spline Curve (Yellow, Solid) */}
+                    {tempPoints.length >= 1 && (
                         <Line
-                            points={generateSplinePoints([...tempPoints, cursorPosition], Math.min(3, tempPoints.length), 32)}
+                            points={generateSplinePoints([...tempPoints, cursorPosition], Math.min(3, tempPoints.length), 50)}
                             color="yellow"
-                            lineWidth={1}
-                            dashed={true}
-                            dashScale={10}
+                            lineWidth={2}
+                            dashed={false}
                         />
                     )}
+
+                    {/* Elastic Line to Cursor (Cyan, Dashed) */}
                     <Line
                         points={[tempPoints[tempPoints.length - 1], cursorPosition]}
-                        color="yellow"
+                        color="cyan"
                         lineWidth={1}
                         dashed={true}
                         dashScale={5}

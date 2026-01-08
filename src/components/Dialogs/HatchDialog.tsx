@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { PRESET_PATTERNS, PATTERN_CATEGORIES, getPatternPreview, addCustomPattern } from '../../utils/hatchPatterns';
+import { PRESET_PATTERNS, PATTERN_CATEGORIES, getPatternPreview, addCustomPattern, deleteCustomPattern } from '../../utils/hatchPatterns';
 import './HatchDialog.css';
 
 interface HatchDialogProps {
@@ -83,16 +83,53 @@ const HatchDialog: React.FC<HatchDialogProps> = ({
         reader.onload = (event) => {
             const result = event.target?.result as string;
             if (result) {
-                const name = file.name.split('.')[0];
-                const newId = addCustomPattern(name, result);
-                setRefreshTrigger(prev => prev + 1);
-                setActiveCategory('custom');
-                setSelectedPattern(newId);
-                // Auto apply color white for images usually
-                setColor('#ffffff');
+                // Optimization: Resize image to max 512px
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_SIZE = 512;
+                    let w = img.width;
+                    let h = img.height;
+
+                    if (w > MAX_SIZE || h > MAX_SIZE) {
+                        if (w > h) {
+                            h *= MAX_SIZE / w;
+                            w = MAX_SIZE;
+                        } else {
+                            w *= MAX_SIZE / h;
+                            h = MAX_SIZE;
+                        }
+                    }
+
+                    canvas.width = w;
+                    canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                        ctx.drawImage(img, 0, 0, w, h);
+                        const resizedData = canvas.toDataURL('image/png');
+
+                        const name = file.name.split('.')[0];
+                        const newId = addCustomPattern(name, resizedData);
+                        setRefreshTrigger(prev => prev + 1);
+                        setActiveCategory('custom');
+                        setSelectedPattern(newId);
+                        setColor('#ffffff');
+                    }
+                };
+                img.src = result;
             }
         };
         reader.readAsDataURL(file);
+    };
+
+    const handleDeletePattern = (patternKey: string) => {
+        if (confirm('Are you sure you want to delete this pattern?')) {
+            deleteCustomPattern(patternKey);
+            setRefreshTrigger(prev => prev + 1);
+            if (selectedPattern === patternKey) {
+                setSelectedPattern('ANSI31');
+            }
+        }
     };
 
     // Pattern seçildiğinde rengi de güncelle (sadece create modunda)
@@ -261,6 +298,8 @@ const HatchDialog: React.FC<HatchDialogProps> = ({
                                 const pattern = PRESET_PATTERNS[patternKey];
                                 const isSelected = selectedPattern === patternKey;
                                 const preview = getPatternPreview(patternKey, 48);
+                                const isCustom = pattern.category === 'custom';
+
                                 return (
                                     <button
                                         key={patternKey}
@@ -268,6 +307,19 @@ const HatchDialog: React.FC<HatchDialogProps> = ({
                                         onClick={() => handlePatternSelect(patternKey)}
                                         title={pattern.name}
                                     >
+                                        {/* Delete Button for Custom Patterns */}
+                                        {isCustom && (
+                                            <div
+                                                className="delete-pattern-btn"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeletePattern(patternKey);
+                                                }}
+                                                title="Delete Pattern"
+                                            >
+                                                <span className="material-icons">close</span>
+                                            </div>
+                                        )}
                                         <img
                                             src={preview}
                                             alt={pattern.name}

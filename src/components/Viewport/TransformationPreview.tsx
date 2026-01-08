@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useDrawing } from '../../context/DrawingContext';
 import { Line, Text } from '@react-three/drei';
-import { translatePoint, rotatePoint, scalePointFromCenter } from '../../utils/geometryUtils';
+import { translatePoint, rotatePoint, scalePointFromCenter, mirrorPoint } from '../../utils/geometryUtils';
 import type { Entity, Point } from '../../types/entities';
 
 // Helper to render a ghost entity
@@ -22,6 +22,8 @@ const GhostEntityRenderer = ({ entity }: { entity: Entity }) => {
                 dashScale={dashScale}
                 opacity={opacity}
                 transparent
+                depthTest={false}
+                renderOrder={50}
             />
         );
     } else if (entity.type === 'LWPOLYLINE') {
@@ -36,6 +38,8 @@ const GhostEntityRenderer = ({ entity }: { entity: Entity }) => {
                 dashScale={dashScale}
                 opacity={opacity}
                 transparent
+                depthTest={false}
+                renderOrder={50}
             />
         );
     } else if (entity.type === 'CIRCLE') {
@@ -58,6 +62,8 @@ const GhostEntityRenderer = ({ entity }: { entity: Entity }) => {
                 dashScale={dashScale}
                 opacity={opacity}
                 transparent
+                depthTest={false}
+                renderOrder={50}
             />
         );
     } else if (entity.type === 'ARC') {
@@ -84,6 +90,8 @@ const GhostEntityRenderer = ({ entity }: { entity: Entity }) => {
                 dashScale={dashScale}
                 opacity={opacity}
                 transparent
+                depthTest={false}
+                renderOrder={50}
             />
         );
     } else if (entity.type === 'ELLIPSE') {
@@ -106,6 +114,8 @@ const GhostEntityRenderer = ({ entity }: { entity: Entity }) => {
                 dashScale={dashScale}
                 opacity={opacity}
                 transparent
+                depthTest={false}
+                renderOrder={50}
             />
         );
     } else if (entity.type === 'HATCH') {
@@ -122,6 +132,8 @@ const GhostEntityRenderer = ({ entity }: { entity: Entity }) => {
                     dashScale={dashScale}
                     opacity={opacity}
                     transparent
+                    depthTest={false}
+                    renderOrder={50}
                 />
             );
         }
@@ -141,6 +153,7 @@ const GhostEntityRenderer = ({ entity }: { entity: Entity }) => {
                 anchorY="bottom"
                 rotation={[0, 0, rotation]}
                 fillOpacity={opacity}
+                renderOrder={50}
             >
                 {text}
             </Text>
@@ -186,6 +199,8 @@ const GhostEntityRenderer = ({ entity }: { entity: Entity }) => {
                         dashScale={dashScale}
                         opacity={opacity}
                         transparent
+                        depthTest={false}
+                        renderOrder={50}
                     />
                 ))}
             </group>
@@ -195,16 +210,22 @@ const GhostEntityRenderer = ({ entity }: { entity: Entity }) => {
 };
 
 const TransformationPreview = () => {
-    const { activeCommand, step, commandState, selectedIds, entities, cursorPosition } = useDrawing();
+    const { activeCommand, step, commandState, selectedIds, entities, cursorPosition, tempPoints } = useDrawing();
 
     // Dönüştürülmüş varlıkları hesapla (sadece aktif komut varsa)
     const transformedEntities = useMemo(() => {
-        if (!activeCommand || selectedIds.size === 0) return null;
+        if (!activeCommand) return null;
 
         // Base point set edilmiş olmalı (genelde step >= 2)
         if (step !== 2) return null;
 
-        const originalEntities = entities.filter(ent => selectedIds.has(ent.id));
+        // Fallback to commandState.selectedEntities if selectedIds is empty
+        let originalEntities = entities.filter(ent => selectedIds.has(ent.id));
+        if (originalEntities.length === 0 && commandState.selectedEntities) {
+            const ids = new Set(commandState.selectedEntities as number[]);
+            originalEntities = entities.filter(ent => ids.has(ent.id));
+        }
+
         if (originalEntities.length === 0) return null;
 
         const basePoint = commandState.basePoint || commandState.base;
@@ -279,6 +300,73 @@ const TransformationPreview = () => {
                 previewEntities.push(newEnt as Entity);
             });
 
+        } else if (activeCommand === 'MIRROR') {
+            // Mirror logic requires a line defined by two points.
+            // Point 1 is basePoint/tempPoints[0]. Point 2 is cursorPosition.
+
+            // Check if we have the first point of the mirror line
+
+            // Step 1: Select entities (if not selected).
+            // Step 2: First point of mirror line. -> No preview yet, just moving cursor? Or implies preview if we assume horizontal/vertical? No, wait for 2nd point.
+            // Step 3: Second point of mirror line. -> Preview active here, line is p1 to cursor.
+
+            // Let's assume the standard flow we implemented/observed in DrawingContext:
+            // MIRROR:
+            // Step 1: Selection (if needed)
+            // Step 1 (actually): First point.
+            // Step 2: Second point.
+
+            // If step is 2, it means we have the first point (stored in tempPoints usually for MIRROR in DrawingContext, or passed as basePoint if customized).
+            // Looking at DrawingContext logic we saw earlier for MIRROR:
+            // "Step 1: Ayna çizgisi ilk nokta ... setTempPoints([point]); setStep(2);"
+            // So in Step 2, tempPoints[0] is the first point.
+
+            const firstPoint = commandState.basePoint || (tempPoints && tempPoints[0]) || (commandState.base);
+
+            if (firstPoint) {
+                originalEntities.forEach(ent => {
+                    let newEnt = { ...ent } as any;
+                    const p1 = firstPoint;
+                    const p2 = cursorPosition;
+
+                    if (ent.type === 'LINE') {
+                        newEnt.start = mirrorPoint(ent.start, p1[0], p1[1], p2[0], p2[1]);
+                        newEnt.end = mirrorPoint(ent.end, p1[0], p1[1], p2[0], p2[1]);
+                    } else if (ent.type === 'LWPOLYLINE') {
+                        newEnt.vertices = ent.vertices.map((v: Point) => mirrorPoint(v, p1[0], p1[1], p2[0], p2[1]));
+                    } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE' || ent.type === 'DONUT') {
+                        newEnt.center = mirrorPoint(ent.center, p1[0], p1[1], p2[0], p2[1]);
+                        // Note: For ARC/ELLIPSE rotation/angles might be needed to be flipped/calculated properly.
+                        // Simple mirror of center is a good start. For precise arc reflection:
+                        // Reflect start/end points? Or center + radius?
+                        // If we reflect center, and it's a circle, radius is same.
+                        // If ARC, startAngle/endAngle change.
+                        // Let's stick to center for now for simplicity or try to reflect key points if possible.
+                        if (ent.type === 'ARC') {
+                            // Reflect start/end points to re-calculate angles?
+                            // A bit complex for simple preview. Just showing center move is often enough or simply mirroring relevant props?
+                            // Let's try to be slightly better: Mirror start/end points of arc implies new angles.
+                            // But entity data uses angles.
+                            // TODO: Full math for arc reflection.
+                        }
+                    } else if (ent.type === 'POINT') {
+                        newEnt.position = mirrorPoint(ent.position, p1[0], p1[1], p2[0], p2[1]);
+                    } else if (ent.type === 'HATCH') {
+                        if (newEnt.boundary && newEnt.boundary.vertices) {
+                            newEnt.boundary = {
+                                ...newEnt.boundary,
+                                vertices: newEnt.boundary.vertices.map((v: Point) => mirrorPoint(v, p1[0], p1[1], p2[0], p2[1]))
+                            };
+                        }
+                    } else if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+                        newEnt.position = mirrorPoint(ent.position, p1[0], p1[1], p2[0], p2[1]);
+                        // Rotation reflection?
+                    } else if (ent.type === 'TABLE') {
+                        newEnt.position = mirrorPoint(ent.position, p1[0], p1[1], p2[0], p2[1]);
+                    }
+                    previewEntities.push(newEnt as Entity);
+                });
+            }
         }
 
         return previewEntities;
@@ -385,6 +473,111 @@ const TransformationPreview = () => {
         );
     };
 
+    const renderRotateGuides = () => {
+        if (activeCommand !== 'ROTATE' || step !== 2) return null;
+        const basePoint = commandState.basePoint || commandState.base;
+        if (!basePoint) return null;
+
+        const angle = Math.atan2(cursorPosition[1] - basePoint[1], cursorPosition[0] - basePoint[0]);
+        const angleDeg = (angle * 180 / Math.PI).toFixed(2);
+
+        return (
+            <Text
+                position={[cursorPosition[0] + 2, cursorPosition[1] + 2, 0]}
+                fontSize={12 / 20 * 20} // relative to zoom logic approx
+                color="#ffcc00"
+                anchorX="left"
+                anchorY="bottom"
+            >
+                {`${angleDeg}°`}
+            </Text>
+        );
+    };
+
+    const renderMirrorGuides = () => {
+        if (activeCommand !== 'MIRROR' || step !== 2) return null;
+        // Use robust logic to find the first point, consistent with transformedEntities
+        const firstPoint = commandState.basePoint || (tempPoints && tempPoints[0]) || (commandState.base);
+        if (!firstPoint) return null;
+
+        const midPoint: Point = [
+            (firstPoint[0] + cursorPosition[0]) / 2,
+            (firstPoint[1] + cursorPosition[1]) / 2,
+            0.1 // Lift text slightly
+        ];
+
+        // Calculate extended line points for "infinite" axis visualization
+        const dx = cursorPosition[0] - firstPoint[0];
+        const dy = cursorPosition[1] - firstPoint[1];
+        const len = Math.hypot(dx, dy);
+
+        let axisPoints: [Point, Point] = [
+            [firstPoint[0], firstPoint[1], 0.05],
+            [cursorPosition[0], cursorPosition[1], 0.05]
+        ];
+
+        if (len > 0.001) {
+            const EXTEND_LENGTH = 10000; // Large enough to appear infinite in view
+            const ux = dx / len;
+            const uy = dy / len;
+
+            const start: Point = [
+                firstPoint[0] - ux * EXTEND_LENGTH,
+                firstPoint[1] - uy * EXTEND_LENGTH,
+                0
+            ];
+            const end: Point = [
+                cursorPosition[0] + ux * EXTEND_LENGTH,
+                cursorPosition[1] + uy * EXTEND_LENGTH,
+                0
+            ];
+            axisPoints = [start, end];
+        }
+
+        return (
+            <group>
+                {/* Mirror Axis Line - Infinite guide */}
+                <Line
+                    points={axisPoints}
+                    color="#00ffff"
+                    lineWidth={1} // Thinner for infinite guide style
+                    dashed
+                    dashScale={5} // Larger dash for guide style
+                    opacity={0.6}
+                    transparent
+                    depthTest={false}
+                    renderOrder={100}
+                />
+
+                {/* Active Segment Highlight (P1 to Cursor) used for defining the axis */}
+                <Line
+                    points={[
+                        [firstPoint[0], firstPoint[1], 0.05],
+                        [cursorPosition[0], cursorPosition[1], 0.05]
+                    ]}
+                    color="#00ffff"
+                    lineWidth={2}
+                    dashed={false} // Solid for the active part
+                    opacity={0.8}
+                    transparent
+                    depthTest={false}
+                    renderOrder={101}
+                />
+
+                {/* Axis Label */}
+                <Text
+                    position={[midPoint[0], midPoint[1], 0]}
+                    fontSize={12 / 20 * 20}
+                    color="#00ffff"
+                    anchorX="center"
+                    anchorY="bottom"
+                >
+                    Mirror Axis
+                </Text>
+            </group>
+        );
+    };
+
     if (!finalEntities) return null;
 
     return (
@@ -405,6 +598,8 @@ const TransformationPreview = () => {
                 />
             )}
             {renderScaleGuides()}
+            {renderRotateGuides()}
+            {renderMirrorGuides()}
         </group>
     );
 };

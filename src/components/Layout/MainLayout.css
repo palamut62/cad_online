@@ -325,11 +325,24 @@
     color: #888;
     pointer-events: auto;
     cursor: pointer;
-    transition: color 0.2s;
+    transition: color 0.1s, transform 0.1s;
+    user-select: none;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .compass-label:hover {
     color: #4cc2ff;
+    transform: scale(1.2);
+    font-weight: 900;
+}
+
+.compass-label:active {
+    transform: scale(0.95);
+    color: #007acc;
 }
 
 .compass-label.n {
