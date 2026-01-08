@@ -396,6 +396,68 @@ const ZoomController = () => {
     return null;
 };
 
+// Mouse Wheel Zoom Controller - İmlece doğru zoom yapar (AutoCAD tarzı)
+const MouseWheelZoomController = () => {
+    const { camera, gl } = useThree();
+    const { controls } = useThree();
+
+    useEffect(() => {
+        const handleWheel = (event: WheelEvent) => {
+            event.preventDefault();
+
+            const orthoCamera = camera as THREE.OrthographicCamera;
+            if (!orthoCamera.isOrthographicCamera) return;
+
+            // Get cursor position in normalized device coordinates (-1 to 1)
+            const rect = gl.domElement.getBoundingClientRect();
+            const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            // Calculate world position under cursor BEFORE zoom
+            const frustumHalfWidth = (orthoCamera.right - orthoCamera.left) / 2;
+            const frustumHalfHeight = (orthoCamera.top - orthoCamera.bottom) / 2;
+
+            const worldXBefore = camera.position.x + (ndcX * frustumHalfWidth) / orthoCamera.zoom;
+            const worldYBefore = camera.position.y + (ndcY * frustumHalfHeight) / orthoCamera.zoom;
+
+            // Apply zoom factor
+            const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
+            const newZoom = Math.max(0.01, Math.min(10000, orthoCamera.zoom * zoomFactor));
+
+            // Calculate world position under cursor AFTER zoom
+            const worldXAfter = camera.position.x + (ndcX * frustumHalfWidth) / newZoom;
+            const worldYAfter = camera.position.y + (ndcY * frustumHalfHeight) / newZoom;
+
+            // Adjust camera position to keep the world point under cursor
+            const deltaX = worldXBefore - worldXAfter;
+            const deltaY = worldYBefore - worldYAfter;
+
+            camera.position.x += deltaX;
+            camera.position.y += deltaY;
+
+            // Update OrbitControls target to match camera movement
+            if (controls) {
+                (controls as any).target.x += deltaX;
+                (controls as any).target.y += deltaY;
+                (controls as any).update();
+            }
+
+            // Apply new zoom
+            orthoCamera.zoom = newZoom;
+            orthoCamera.updateProjectionMatrix();
+        };
+
+        const domElement = gl.domElement;
+        domElement.addEventListener('wheel', handleWheel, { passive: false });
+
+        return () => {
+            domElement.removeEventListener('wheel', handleWheel);
+        };
+    }, [camera, gl, controls]);
+
+    return null;
+};
+
 // Navigation Controller - Pan and View resets
 const NavigationController = () => {
     const { camera, controls } = useThree();
@@ -683,7 +745,7 @@ const Scene = () => {
             <OrbitControls
                 enableDamping={false}
                 enableRotate={false}
-                enableZoom={true}
+                enableZoom={false}
                 enablePan={true}
                 mouseButtons={{
                     LEFT: undefined,
@@ -708,6 +770,9 @@ const Scene = () => {
 
             {/* Navigation Controller */}
             <NavigationController />
+
+            {/* Mouse Wheel Zoom Controller - İmlece doğru zoom */}
+            <MouseWheelZoomController />
 
             {/* Dynamic Grid on XY Plane - follows camera, behind entities */}
             <DynamicGrid />

@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Line, Text } from '@react-three/drei';
 import { useDrawing } from '../../context/DrawingContext';
-import type { Point } from '../../types/entities';
+import type { Point, Entity } from '../../types/entities';
 import { DEFAULT_DIMENSION_SETTINGS } from '../../types/dimensionSettings';
+import { closestPointOnEntity } from '../../utils/geometryUtils';
+import { findEntityIntersections } from '../../utils/intersectionUtils';
 
 // Daire için noktalar oluştur
 const generateCirclePoints = (center: Point, radius: number, segments: number = 64): [number, number, number][] => {
@@ -59,7 +61,7 @@ const generateEllipsePoints = (
 };
 
 const PreviewRenderer = () => {
-    const { activeCommand, tempPoints, cursorPosition, step, commandState } = useDrawing();
+    const { activeCommand, tempPoints, cursorPosition, step, commandState, entities, hoveredEntityId } = useDrawing();
 
     if (!activeCommand) return null;
 
@@ -804,6 +806,258 @@ const PreviewRenderer = () => {
                 </mesh>
             </group>
         );
+    }
+
+    // EXTEND preview - Step 2: Show extended line segment in green
+    if (activeCommand === 'EXTEND' && step === 2) {
+        const SELECT_THRESHOLD = 5.0;
+        let targetEntity: Entity | null = null;
+        let minD = Infinity;
+
+        const boundaryIds = commandState?.boundaries || [];
+
+        for (const ent of entities) {
+            if (ent.visible === false) continue;
+            if (boundaryIds.length > 0 && boundaryIds.includes(ent.id)) continue;
+
+            const d = closestPointOnEntity(cursorPosition[0], cursorPosition[1], ent);
+            if (d < SELECT_THRESHOLD && d < minD) {
+                minD = d;
+                targetEntity = ent;
+            }
+        }
+
+        if (targetEntity && targetEntity.type === 'LINE') {
+            const lineEnt = targetEntity as any;
+            const boundaries = boundaryIds.length > 0
+                ? entities.filter(e => boundaryIds.includes(e.id))
+                : entities.filter(e => e.visible !== false && e.id !== targetEntity!.id);
+
+            // Determine which end to extend
+            const distToStart = Math.hypot(cursorPosition[0] - lineEnt.start[0], cursorPosition[1] - lineEnt.start[1]);
+            const distToEnd = Math.hypot(cursorPosition[0] - lineEnt.end[0], cursorPosition[1] - lineEnt.end[1]);
+            const extendStart = distToStart < distToEnd;
+
+            const dx = lineEnt.end[0] - lineEnt.start[0];
+            const dy = lineEnt.end[1] - lineEnt.start[1];
+            const len = Math.sqrt(dx * dx + dy * dy);
+
+            if (len > 0.0001) {
+                const dirX = dx / len;
+                const dirY = dy / len;
+
+                // Find closest intersection
+                const extendLength = 10000;
+                const extendedStart: Point = extendStart
+                    ? [lineEnt.start[0] - dirX * extendLength, lineEnt.start[1] - dirY * extendLength, 0]
+                    : lineEnt.start;
+                const extendedEnd: Point = !extendStart
+                    ? [lineEnt.end[0] + dirX * extendLength, lineEnt.end[1] + dirY * extendLength, 0]
+                    : lineEnt.end;
+
+                let closestIntersection: Point | null = null;
+                let minDistToIntersection = Infinity;
+
+                for (const boundary of boundaries) {
+                    if (boundary.id === targetEntity.id) continue;
+                    const testLine = { ...targetEntity, start: extendedStart, end: extendedEnd };
+                    const intersections = findEntityIntersections(testLine, boundary);
+
+                    for (const result of intersections) {
+                        const distFromEnd = extendStart
+                            ? Math.hypot(result.point[0] - lineEnt.start[0], result.point[1] - lineEnt.start[1])
+                            : Math.hypot(result.point[0] - lineEnt.end[0], result.point[1] - lineEnt.end[1]);
+
+                        // Check direction
+                        const dotProduct = extendStart
+                            ? (result.point[0] - lineEnt.start[0]) * (-dirX) + (result.point[1] - lineEnt.start[1]) * (-dirY)
+                            : (result.point[0] - lineEnt.end[0]) * dirX + (result.point[1] - lineEnt.end[1]) * dirY;
+
+                        if (dotProduct > 0 && distFromEnd < minDistToIntersection) {
+                            minDistToIntersection = distFromEnd;
+                            closestIntersection = result.point;
+                        }
+                    }
+                }
+
+                if (closestIntersection) {
+                    // Show the extension segment in green/dashed
+                    const extStart: [number, number, number] = extendStart
+                        ? [closestIntersection[0], closestIntersection[1], 0.1]
+                        : [lineEnt.end[0], lineEnt.end[1], 0.1];
+                    const extEnd: [number, number, number] = extendStart
+                        ? [lineEnt.start[0], lineEnt.start[1], 0.1]
+                        : [closestIntersection[0], closestIntersection[1], 0.1];
+
+                    return (
+                        <Line
+                            points={[extStart, extEnd]}
+                            color="#00ff00"
+                            lineWidth={3}
+                            opacity={0.8}
+                            transparent
+                            dashed
+                            dashSize={4}
+                            gapSize={2}
+                        />
+                    );
+                }
+            }
+        }
+    }
+
+    // OFFSET preview - Step 3: Show offset curve in cyan
+    if (activeCommand === 'OFFSET' && step === 3 && commandState?.targetId && commandState?.distance) {
+        const targetEntity = entities.find(e => e.id === commandState.targetId);
+        if (targetEntity && targetEntity.type === 'LINE') {
+            const lineEnt = targetEntity as any;
+            const dx = lineEnt.end[0] - lineEnt.start[0];
+            const dy = lineEnt.end[1] - lineEnt.start[1];
+            const len = Math.sqrt(dx * dx + dy * dy);
+
+            if (len > 0.0001) {
+                // Calculate perpendicular direction
+                const nx = -dy / len;
+                const ny = dx / len;
+
+                // Determine offset direction based on cursor position
+                const midX = (lineEnt.start[0] + lineEnt.end[0]) / 2;
+                const midY = (lineEnt.start[1] + lineEnt.end[1]) / 2;
+                const toMouse = [cursorPosition[0] - midX, cursorPosition[1] - midY];
+                const side = toMouse[0] * nx + toMouse[1] * ny > 0 ? 1 : -1;
+
+                const distance = commandState.distance * side;
+
+                // Calculate offset line
+                const offsetStart: [number, number, number] = [
+                    lineEnt.start[0] + nx * distance,
+                    lineEnt.start[1] + ny * distance,
+                    0.1
+                ];
+                const offsetEnd: [number, number, number] = [
+                    lineEnt.end[0] + nx * distance,
+                    lineEnt.end[1] + ny * distance,
+                    0.1
+                ];
+
+                return (
+                    <group>
+                        {/* Offset line preview */}
+                        <Line
+                            points={[offsetStart, offsetEnd]}
+                            color="#00ffff"
+                            lineWidth={2}
+                            opacity={0.8}
+                            transparent
+                        />
+                        {/* Distance guide line from original to offset */}
+                        <Line
+                            points={[
+                                [midX, midY, 0.1],
+                                [midX + nx * distance, midY + ny * distance, 0.1]
+                            ]}
+                            color="#ffff00"
+                            lineWidth={1}
+                            opacity={0.5}
+                            transparent
+                            dashed
+                            dashSize={3}
+                            gapSize={2}
+                        />
+                    </group>
+                );
+            }
+        }
+    }
+
+    // TRIM preview - Step 2: Show segment that would be trimmed in red
+    if (activeCommand === 'TRIM' && step === 2) {
+        // Find entity under cursor
+        const SELECT_THRESHOLD = 5.0;
+        let targetEntity: Entity | null = null;
+        let minD = Infinity;
+
+        const cuttingEdgeIds = commandState?.cuttingEdges || [];
+
+        for (const ent of entities) {
+            if (ent.visible === false) continue;
+            // In explicit mode, skip cutting edges as targets
+            if (cuttingEdgeIds.length > 0 && cuttingEdgeIds.includes(ent.id)) continue;
+
+            const d = closestPointOnEntity(cursorPosition[0], cursorPosition[1], ent);
+            if (d < SELECT_THRESHOLD && d < minD) {
+                minD = d;
+                targetEntity = ent;
+            }
+        }
+
+        if (targetEntity && targetEntity.type === 'LINE') {
+            // Get cutting edges
+            const cuttingEdges = cuttingEdgeIds.length > 0
+                ? entities.filter(e => cuttingEdgeIds.includes(e.id))
+                : entities.filter(e => e.visible !== false && e.id !== targetEntity!.id);
+
+            // Calculate trim preview for LINE
+            const lineEnt = targetEntity as any;
+            const dx = lineEnt.end[0] - lineEnt.start[0];
+            const dy = lineEnt.end[1] - lineEnt.start[1];
+            const lenSq = dx * dx + dy * dy;
+
+            if (lenSq > 0.0001) {
+                const tValues: number[] = [0, 1];
+
+                // Find intersection t-values
+                for (const cutter of cuttingEdges) {
+                    if (cutter.id === targetEntity.id) continue;
+                    const results = findEntityIntersections(targetEntity, cutter);
+                    for (const res of results) {
+                        const t = ((res.point[0] - lineEnt.start[0]) * dx + (res.point[1] - lineEnt.start[1]) * dy) / lenSq;
+                        if (t > 0.00001 && t < 0.99999) {
+                            tValues.push(t);
+                        }
+                    }
+                }
+
+                // Sort t-values
+                tValues.sort((a, b) => a - b);
+
+                // Find segment containing click point
+                const clickT = ((cursorPosition[0] - lineEnt.start[0]) * dx + (cursorPosition[1] - lineEnt.start[1]) * dy) / lenSq;
+
+                // Find which segment will be trimmed
+                for (let i = 0; i < tValues.length - 1; i++) {
+                    const t0 = tValues[i];
+                    const t1 = tValues[i + 1];
+
+                    if (clickT >= t0 - 0.001 && clickT <= t1 + 0.001) {
+                        // This segment will be trimmed - show in red
+                        const segStart: [number, number, number] = [
+                            lineEnt.start[0] + dx * t0,
+                            lineEnt.start[1] + dy * t0,
+                            0.1
+                        ];
+                        const segEnd: [number, number, number] = [
+                            lineEnt.start[0] + dx * t1,
+                            lineEnt.start[1] + dy * t1,
+                            0.1
+                        ];
+
+                        return (
+                            <Line
+                                points={[segStart, segEnd]}
+                                color="#ff0000"
+                                lineWidth={3}
+                                opacity={0.8}
+                                transparent
+                                dashed
+                                dashSize={4}
+                                gapSize={2}
+                            />
+                        );
+                    }
+                }
+            }
+        }
     }
 
     return null;

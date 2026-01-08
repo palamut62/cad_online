@@ -59,8 +59,12 @@ const MainLayout = () => {
         loadEntities,
         // Print
         setPrintDialogState,
-        // Zoom to fit
+        // Zoom functions
         triggerZoomToFit,
+        triggerZoomIn,
+        triggerZoomOut,
+        startZoomWindow,
+        zoomWindowMode,
         finishPolyline,
         triggerPan,
         triggerView
@@ -74,6 +78,10 @@ const MainLayout = () => {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            // Don't handle shortcuts when typing in input fields
+            const target = e.target as HTMLElement;
+            const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
             if (e.key === 'Escape') {
                 console.log("ESC pressed");
                 if (inPlaceTextEditorState.isOpen) {
@@ -85,6 +93,10 @@ const MainLayout = () => {
                 } else if (printWindowMode) {
                     // Cancel print window selection mode
                     finishPrintWindow();
+                } else if (zoomWindowMode) {
+                    // Cancel zoom window mode
+                    // Note: We don't have a cancel function, but ESC should work
+                    cancelCommand();
                 } else if (activeCommand) {
                     cancelCommand();
                 } else if (selectedIds.size > 0) {
@@ -101,11 +113,31 @@ const MainLayout = () => {
                     cancelCommand(false);
                 }
             }
+            // Zoom keyboard shortcuts - only when not typing
+            else if (!isTyping) {
+                if (e.key === 'z' || e.key === 'Z') {
+                    // Z: Zoom Window mode
+                    e.preventDefault();
+                    startZoomWindow();
+                } else if (e.key === 'e' || e.key === 'E') {
+                    // E: Zoom Extents
+                    e.preventDefault();
+                    triggerZoomToFit();
+                } else if (e.key === '+' || e.key === '=') {
+                    // +/=: Zoom In
+                    e.preventDefault();
+                    triggerZoomIn();
+                } else if (e.key === '-' || e.key === '_') {
+                    // -/_: Zoom Out
+                    e.preventDefault();
+                    triggerZoomOut();
+                }
+            }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [cancelCommand, clearSelection, activeCommand, selectedIds, activeGrip, cancelGrip, printWindowMode, finishPrintWindow, inPlaceTextEditorState.isOpen, cancelInPlaceEdit]);
+    }, [cancelCommand, clearSelection, activeCommand, selectedIds, activeGrip, cancelGrip, printWindowMode, finishPrintWindow, zoomWindowMode, inPlaceTextEditorState.isOpen, cancelInPlaceEdit, startZoomWindow, triggerZoomToFit, triggerZoomIn, triggerZoomOut]);
 
     return (
         <div className="main-layout">

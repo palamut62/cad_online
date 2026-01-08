@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useRef, useMem
 import type { Entity, Point } from '../types/entities';
 import type { CommandType } from '../types/commands';
 import { closestPointOnEntity, rotatePoint as rotatePt, scalePoint as scalePt, translatePoint as translatePt, mirrorPoint as mirrorPt, getClosestSnapPoint, SnapPoint, GripPoint, distance2D, isEntityInBox, doesEntityIntersectBox, createArcFrom3Points } from '../utils/geometryUtils';
-import { trimLineEntity, trimArcEntity, trimCircleEntity, extendLineEntity, extendArcEntity } from '../utils/intersectionUtils';
+import { trimLineEntity, trimArcEntity, trimCircleEntity, trimPolylineEntity, extendLineEntity, extendArcEntity } from '../utils/intersectionUtils';
 import { findAlignmentPoints, AlignmentGuide, scaleEntity } from '../utils/geometryUtils';
 import { findBoundaryFromPoint } from '../utils/boundaryUtils';
 import { convertToUnit } from '../utils/unitConversion';
@@ -675,6 +675,8 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   const [panTrigger, setPanTrigger] = useState<{ x: number; y: number } | null>(null);
   const triggerPan = useCallback((x: number, y: number) => {
     setPanTrigger({ x, y });
+    // Reset trigger after a short delay to allow re-triggering and prevent stale state
+    setTimeout(() => setPanTrigger(null), 100);
   }, []);
 
   const [viewTrigger, setViewTrigger] = useState<'TOP' | null>(null);
@@ -970,10 +972,12 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
       });
     }
 
-    // Quick Trim/Extend Mode: Skip manual boundary selection
-    if (cmd === 'TRIM' || cmd === 'EXTEND') {
+    // TRIM: Start at Step 1 (select cutting edges), press Enter to skip to Quick Trim mode
+    // EXTEND: Quick Extend Mode - Skip manual boundary selection
+    if (cmd === 'EXTEND') {
       setStep(2);
     }
+    // TRIM stays at Step 1 by default - user selects cutting edges or presses Enter for Quick Trim
 
     // DIMCONTINUE: Ardışık ölçü - önceden ölçü gerekmez
     // Step 1: İlk nokta, Step 2: İkinci nokta, Step 3: Ölçü pozisyonu, Step 4+: Devam noktaları
@@ -2676,6 +2680,9 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
           } else if (target.type === 'CIRCLE') {
             const effectiveCutters = cuttingEdges.filter(e => e.id !== target.id);
             newEntities = trimCircleEntity(target, point, effectiveCutters);
+          } else if (target.type === 'LWPOLYLINE') {
+            const effectiveCutters = cuttingEdges.filter(e => e.id !== target.id);
+            newEntities = trimPolylineEntity(target, point, effectiveCutters);
           }
 
           // Delete original entity
@@ -5084,12 +5091,10 @@ export const DrawingProvider: React.FC<DrawingProviderProps> = ({ children }) =>
   const handleValueInput = useCallback((value: string) => {
     if (activeCommand === 'TRIM' && step === 1 && value === '') {
       // Enter pressed - move to trimming step
-      if (commandState.cuttingEdges && commandState.cuttingEdges.length > 0) {
-        setStep(2);
-        clearSelection(); // Clear cutting edge selection highlights
-      } else {
-        console.log('No cutting edges selected');
-      }
+      // If cutting edges were selected, use them. Otherwise, Quick Trim mode (all entities are cutters)
+      setStep(2);
+      clearSelection(); // Clear cutting edge selection highlights
+      console.log('TRIM: Moving to Step 2', commandState.cuttingEdges?.length ? `with ${commandState.cuttingEdges.length} cutting edges` : '(Quick Trim mode - all entities are cutters)');
     } else if (activeCommand === 'EXTEND' && step === 1 && value === '') {
       // Enter pressed - move to extending step
       if (commandState.boundaries && commandState.boundaries.length > 0) {

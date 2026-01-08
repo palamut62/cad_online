@@ -392,12 +392,13 @@ interface EntityRendererProps {
     entity: Entity;
     isSelected: boolean;
     isHovered?: boolean;
+    isCuttingEdge?: boolean;
 }
 
-const EntityRenderer = React.memo(({ entity: ent, isSelected, isHovered }: EntityRendererProps) => {
+const EntityRenderer = React.memo(({ entity: ent, isSelected, isHovered, isCuttingEdge }: EntityRendererProps) => {
     const { setDimensionEditDialogState, toggleSelection, activeCommand } = useDrawing();
-    // Selected: blue, Hovered: cyan, Normal: entity color
-    const displayColor = isSelected ? '#0078d4' : isHovered ? '#00d4ff' : ent.color;
+    // Cutting Edge: cyan, Selected: blue, Hovered: light cyan, Normal: entity color
+    const displayColor = isCuttingEdge ? '#00ffff' : isSelected ? '#0078d4' : isHovered ? '#00d4ff' : ent.color;
     const displayDashed = isSelected;
     const lineWidth = isHovered && !isSelected ? 2.5 : isSelected ? 2 : 1.5;
 
@@ -1139,7 +1140,8 @@ const EntityRenderer = React.memo(({ entity: ent, isSelected, isHovered }: Entit
     return prevProps.entity.id === nextProps.entity.id &&
         prevProps.entity.color === nextProps.entity.color &&
         prevProps.isSelected === nextProps.isSelected &&
-        prevProps.isHovered === nextProps.isHovered;
+        prevProps.isHovered === nextProps.isHovered &&
+        prevProps.isCuttingEdge === nextProps.isCuttingEdge;
 });
 
 EntityRenderer.displayName = 'EntityRenderer';
@@ -1161,6 +1163,14 @@ const EntitiesRenderer = React.memo(() => {
         }).filter(Boolean) as { ent: Entity; displayColor: string; layerVisible: boolean }[];
     }, [entities, layers]);
 
+    // Get cutting edges for TRIM command highlighting
+    const cuttingEdgeIds = useMemo(() => {
+        if (activeCommand === 'TRIM' && commandState?.cuttingEdges) {
+            return new Set<number>(commandState.cuttingEdges);
+        }
+        return new Set<number>();
+    }, [activeCommand, commandState?.cuttingEdges]);
+
     // Render entity list - selection state is passed as props (EntityRenderer handles memoization)
     const entityList = entityBaseList.map(({ ent, displayColor }) => {
         // Use stable entity reference with computed color
@@ -1172,6 +1182,7 @@ const EntitiesRenderer = React.memo(() => {
                 entity={displayEntity}
                 isSelected={selectedIds.has(ent.id)}
                 isHovered={hoveredEntityId === ent.id && !selectedIds.has(ent.id)}
+                isCuttingEdge={cuttingEdgeIds.has(ent.id)}
             />
         );
     });
